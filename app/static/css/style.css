@@ -392,12 +392,12 @@ p {
 
 /* Indigo */
 .btn-indigo {
-    background-color: var(--color-indigo);
-    color: var(--color-white);
+    background-color: #5E53E0 !important;
+    color: #FFFFFF !important;
 }
 
 .btn-indigo:hover:not(:disabled) {
-    background-color: #4D43C9;
+    background-color: #4D43C9 !important;
 }
 
 /* Success - Green */
