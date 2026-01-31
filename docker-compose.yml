@@ -7,12 +7,20 @@ services:
       - VALKEY_HOST=valkey
       - VALKEY_PORT=6379
       - DATA_DIR=/data
+      - LL_API_HOST=${LL_API_HOST:-https://dev-admin-api.solutions-eng.online:8443/api/v1}
     volumes:
       - app-data:/data
     depends_on:
-      - valkey
+      valkey:
+        condition: service_healthy
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   worker:
     build: .
@@ -21,10 +29,14 @@ services:
       - VALKEY_PORT=6379
       - DATA_DIR=/data
       - ARQ_MAX_JOBS=4
+      - LL_API_HOST=${LL_API_HOST:-https://dev-admin-api.solutions-eng.online:8443/api/v1}
     volumes:
       - app-data:/data
     depends_on:
-      - valkey
+      valkey:
+        condition: service_healthy
+      web:
+        condition: service_healthy
     command: arq services.worker.WorkerSettings
     restart: unless-stopped
     deploy:
@@ -38,6 +50,12 @@ services:
       - valkey-data:/data
     command: valkey-server --appendonly yes
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
 volumes:
   app-data:

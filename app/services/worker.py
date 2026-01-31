@@ -4,6 +4,7 @@ Parallel job processing with Valkey/Redis backend
 """
 
 import asyncio
+import json
 import os
 from typing import Any
 
@@ -15,6 +16,8 @@ from services.lucidlink import LucidLinkClient
 from services.s3_service import S3Service
 from services import secrets
 
+# Initialize database on module load
+db.init_db()
 
 # Valkey/Redis connection settings
 def get_redis_settings() -> RedisSettings:
@@ -23,27 +26,44 @@ def get_redis_settings() -> RedisSettings:
         port=int(os.getenv("VALKEY_PORT", 6379)),
     )
 
+# Log channel for pub/sub
+LOG_CHANNEL = "worker:logs"
+
+
+async def publish_log(ctx: dict, message: str) -> None:
+    """Publish log message to Valkey for web UI consumption."""
+    redis = ctx.get("redis")
+    if redis:
+        await redis.publish(LOG_CHANNEL, json.dumps({"message": message}))
+
 
 async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
     """Process an import job."""
+    async def log(msg: str) -> None:
+        await publish_log(ctx, msg)
+
     job = db.get_job(job_id)
     if not job:
+        await log(f"❌ Job #{job_id} not found")
         return {"status": "error", "message": f"Job {job_id} not found"}
 
     # Mark as running
     db.update_job(job_id, status="running")
+    await log(f"🚀 Job #{job_id} started: {job['prefix']}")
 
     try:
         # Get credentials
         token = secrets.get_lucidlink_token()
         if not token:
-            raise ValueError("No API token available")
+            raise ValueError("No API token available - please reconnect in web UI")
 
         aws_key, aws_secret = secrets.get_aws_credentials()
 
         # Validate job has required IDs
         if not job.get("filespace_id") or not job.get("datastore_id"):
             raise ValueError("Job missing filespace_id or datastore_id")
+
+        await log(f"📋 Using filespace: {job['filespace_id'][:8]}...")
 
         # Initialize clients
         s3_service = S3Service(access_key=aws_key, secret_key=aws_secret)
@@ -56,14 +76,17 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         )
 
         # Scan for files
+        await log("📂 Scanning folder...")
         keys = await s3_service.list_all_objects(job["bucket"], job["prefix"])
         total = len(keys)
 
         if total == 0:
+            await log("⚠️ No files found")
             db.update_job(job_id, status="completed", total_files=0)
             return {"status": "completed", "total": 0}
 
         db.update_job(job_id, total_files=total)
+        await log(f"📄 Found {total} files")
 
         # Pre-create folder structure (nested under bucket name)
         bucket_name = job["bucket"]
@@ -75,18 +98,21 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
                 unique_dirs.add(f"{bucket_name}/{d}")
 
         sorted_dirs = sorted(list(unique_dirs), key=len)
+        await log(f"📂 Creating {len(sorted_dirs)} directories...")
 
         for d in sorted_dirs:
             success, error = await ll_client.ensure_structure(d + "/dummy_file")
             if not success:
-                print(f"Warning: Failed to create folder {d}: {error}")
+                await log(f"⚠️ Failed to create folder {d}: {error}")
 
         # Check for cancellation
         job = db.get_job(job_id)
         if job and job.get("status") == "cancelled":
+            await log(f"🛑 Job #{job_id} cancelled")
             return {"status": "cancelled"}
 
         # Import files in parallel batches
+        await log("🚀 Importing files...")
         completed = 0
         failed = 0
         batch_size = 10
@@ -105,13 +131,20 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             for key, result in zip(batch, results):
+                fname = key.split("/")[-1]
                 if isinstance(result, Exception):
+                    await log(f"❌ {fname}: {result}")
                     failed += 1
                 else:
                     code, error_msg = result
-                    if code in [200, 201, 400, 409]:
+                    if code in [200, 201]:
+                        await log(f"✅ {fname}")
+                        completed += 1
+                    elif code in [400, 409]:
+                        await log(f"⏭️ {fname} (exists)")
                         completed += 1
                     else:
+                        await log(f"❌ {fname} (HTTP {code}): {error_msg}")
                         failed += 1
 
             # Update progress
@@ -124,19 +157,34 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         # Final status
         job = db.get_job(job_id)
         if job and job.get("status") == "cancelled":
+            await log(f"🛑 Job #{job_id} cancelled ({completed}/{total} files)")
             return {"status": "cancelled", "completed": completed, "failed": failed}
 
         db.update_job(job_id, status="completed")
+        await log(f"✅ Job #{job_id} complete: {completed} imported, {failed} failed")
         return {"status": "completed", "completed": completed, "failed": failed}
 
     except Exception as e:
+        await log(f"❌ Job #{job_id} failed: {e}")
         db.update_job(job_id, status="failed", error_message=str(e))
         return {"status": "failed", "message": str(e)}
+
+
+async def on_startup(ctx: dict) -> None:
+    """Called when worker starts - store redis connection in context."""
+    ctx["redis"] = ctx["redis"]  # Already set by arq
+
+
+async def on_shutdown(ctx: dict) -> None:
+    """Called when worker shuts down."""
+    pass
 
 
 class WorkerSettings:
     """ARQ worker settings."""
     functions = [import_job]
+    on_startup = on_startup
+    on_shutdown = on_shutdown
     redis_settings = get_redis_settings()
     max_jobs = int(os.getenv("ARQ_MAX_JOBS", 4))  # Parallel job limit
     job_timeout = 3600  # 1 hour max per job
