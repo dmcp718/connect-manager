@@ -1,0 +1,110 @@
+<div class="modal-backdrop" onclick="this.parentElement.innerHTML = ''">
+    <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 class="modal-title">Create S3 datastore</h3>
+            <button
+                type="button"
+                class="btn btn-ghost"
+                onclick="document.getElementById('modal-container').innerHTML = ''"
+            >
+                ✕
+            </button>
+        </div>
+        <form
+            hx-post="/api/create-datastore"
+            hx-target="#datastore-container"
+            hx-swap="innerHTML"
+        >
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="ds-name">Datastore name</label>
+                    <input
+                        type="text"
+                        id="ds-name"
+                        name="name"
+                        class="form-input"
+                        required
+                        placeholder="my-s3-datastore"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="ds-bucket">Bucket name</label>
+                    <input
+                        type="text"
+                        id="ds-bucket"
+                        name="bucket"
+                        class="form-input"
+                        required
+                        placeholder="my-bucket"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="ds-region">Region</label>
+                    <input
+                        type="text"
+                        id="ds-region"
+                        name="region"
+                        class="form-input"
+                        value="us-east-1"
+                        placeholder="us-east-1"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="ds-endpoint">Endpoint (optional)</label>
+                    <input
+                        type="text"
+                        id="ds-endpoint"
+                        name="endpoint"
+                        class="form-input"
+                        placeholder="https://s3.example.com"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="ds-access-key">Access key ID</label>
+                    <input
+                        type="text"
+                        id="ds-access-key"
+                        name="access_key"
+                        class="form-input"
+                        required
+                        placeholder="AKIAIOSFODNN7EXAMPLE"
+                    >
+                </div>
+
+                <div class="form-group" x-data="{ show: false }">
+                    <label class="form-label" for="ds-secret-key">Secret access key</label>
+                    <div class="input-password">
+                        <input
+                            :type="show ? 'text' : 'password'"
+                            id="ds-secret-key"
+                            name="secret_key"
+                            class="form-input"
+                            required
+                            placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                        >
+                        <button type="button" class="btn-eye" @click="show = !show" :title="show ? 'Hide' : 'Show'">
+                            <svg x-show="!show" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            <svg x-show="show" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    onclick="document.getElementById('modal-container').innerHTML = ''"
+                >
+                    Cancel
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    Create datastore
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,28 @@
+<div class="browser-container">
+    <!-- Browser Header -->
+    <div class="browser-header">
+        <button
+            class="btn btn-ghost"
+            hx-get="/api/browse/back"
+            hx-target="#browser-contents"
+            hx-swap="innerHTML"
+            {% if not prefix %}disabled{% endif %}
+        >
+            ← Back
+        </button>
+        <span class="browser-path">s3://{{ bucket }}/{{ prefix }}</span>
+        <button
+            class="btn btn-ghost"
+            hx-get="/api/browse?prefix={{ prefix }}"
+            hx-target="#browser-contents"
+            hx-swap="innerHTML"
+        >
+            ↻ Refresh
+        </button>
+    </div>
+
+    <!-- Browser Contents -->
+    <div id="browser-contents" class="browser-contents">
+        {% include "partials/browser_contents.html" %}
+    </div>
+</div>

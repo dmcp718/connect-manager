@@ -1,0 +1,114 @@
+<div class="job-queue"
+     hx-get="/api/jobs"
+     hx-trigger="every 5s"
+     hx-swap="outerHTML">
+    <div class="job-queue-header">
+        <h3 class="job-queue-title">Import jobs</h3>
+        <div class="job-queue-actions">
+            {% if jobs %}
+            <button
+                class="btn btn-ghost btn-sm"
+                hx-post="/api/jobs/clear"
+                hx-target="closest .job-queue"
+                hx-swap="outerHTML"
+            >
+                Clear history
+            </button>
+            {% endif %}
+            <button
+                class="btn btn-ghost btn-sm"
+                hx-get="/api/jobs"
+                hx-target="closest .job-queue"
+                hx-swap="outerHTML"
+            >
+                ↻ Refresh
+            </button>
+        </div>
+    </div>
+
+    {% if queue_status.pending > 0 or queue_status.running > 0 %}
+    <div class="job-queue-status">
+        {% if queue_status.running > 0 %}
+        <span class="status-badge status-running">1 running</span>
+        {% endif %}
+        {% if queue_status.pending > 0 %}
+        <span class="status-badge status-pending">{{ queue_status.pending }} pending</span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="job-list">
+        {% if jobs %}
+            {% for job in jobs %}
+            <div class="job-item job-{{ job.status }}">
+                <div class="job-info">
+                    <div class="job-header">
+                        <span class="job-id">#{{ job.id }}</span>
+                        <span class="job-status-icon">
+                            {% if job.status == 'pending' %}⏳
+                            {% elif job.status == 'running' %}🔄
+                            {% elif job.status == 'completed' and job.failed_files > 0 and job.completed_files == 0 %}❌
+                            {% elif job.status == 'completed' and job.failed_files > 0 %}⚠️
+                            {% elif job.status == 'completed' %}✅
+                            {% elif job.status == 'failed' %}❌
+                            {% elif job.status == 'cancelled' %}🛑
+                            {% endif %}
+                        </span>
+                        <span class="job-prefix">{{ job.prefix }}</span>
+                    </div>
+                    <div class="job-meta">
+                        <span class="job-bucket">{{ job.bucket }}</span>
+                        {% if job.total_files > 0 %}
+                        <span class="job-progress-text">
+                            {{ job.completed_files }}/{{ job.total_files }} files
+                            {% if job.failed_files > 0 %}({{ job.failed_files }} failed){% endif %}
+                        </span>
+                        {% endif %}
+                        {% if job.duration_seconds is not none %}
+                        <span class="job-duration">
+                            ⏱️ {% if job.duration_seconds >= 3600 %}{{ (job.duration_seconds // 3600) }}h {% endif %}{% if job.duration_seconds >= 60 %}{{ ((job.duration_seconds % 3600) // 60) }}m {% endif %}{{ (job.duration_seconds % 60) }}s
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% if job.status == 'running' and job.total_files > 0 %}
+                    <div class="job-progress-bar">
+                        <div class="job-progress-fill" style="width: {{ ((job.completed_files + job.failed_files) / job.total_files * 100)|round }}%"></div>
+                    </div>
+                    {% endif %}
+                    {% if job.error_message %}
+                    <div class="job-error">{{ job.error_message }}</div>
+                    {% endif %}
+                </div>
+                <div class="job-actions">
+                    {% if job.status in ['pending', 'running'] %}
+                    <button
+                        class="btn btn-ghost btn-sm"
+                        hx-post="/api/jobs/{{ job.id }}/cancel"
+                        hx-target="closest .job-queue"
+                        hx-swap="outerHTML"
+                        title="Cancel"
+                    >
+                        ✕
+                    </button>
+                    {% else %}
+                    <button
+                        class="btn btn-ghost btn-sm"
+                        hx-delete="/api/jobs/{{ job.id }}"
+                        hx-target="closest .job-queue"
+                        hx-swap="outerHTML"
+                        title="Remove"
+                    >
+                        🗑️
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="job-empty">
+            <p>No import jobs</p>
+            <p class="text-muted">Use "Import all" on a folder to queue a job</p>
+        </div>
+        {% endif %}
+    </div>
+</div>

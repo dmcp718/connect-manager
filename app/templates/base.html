@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LucidLink Labs</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+    <!-- Custom Aeonik font -->
+    <style>
+        @font-face {
+            font-family: 'Aeonik';
+            src: url('/static/fonts/Aeonik-Medium.otf') format('opentype');
+            font-weight: 500;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Aeonik';
+            src: url('/static/fonts/Aeonik-Bold.otf') format('opentype');
+            font-weight: 700;
+            font-style: normal;
+        }
+    </style>
+
+    <!-- Main CSS -->
+    <link rel="stylesheet" href="/static/css/style.css">
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/sse.js"></script>
+
+    <!-- Alpine.js for minor interactivity -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body x-data="{ activeTab: 'settings' }">
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <img src="/static/img/lab_flask.svg" alt="Lab Flask" class="header-icon">
+            <h1 class="header-title">LucidLink Labs</h1>
+        </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="layout-single">
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Tabs -->
+            <div class="tabs">
+                <button
+                    class="tab"
+                    :class="{ 'active': activeTab === 'settings' }"
+                    @click="activeTab = 'settings'"
+                    hx-get="/api/tab/settings"
+                    hx-target="#tab-content"
+                    hx-swap="innerHTML"
+                >
+                    Settings
+                </button>
+                <button
+                    class="tab"
+                    :class="{ 'active': activeTab === 'browser' }"
+                    @click="activeTab = 'browser'"
+                    hx-get="/api/tab/browser"
+                    hx-target="#tab-content"
+                    hx-swap="innerHTML"
+                >
+                    Browser
+                </button>
+                <button
+                    class="tab"
+                    :class="{ 'active': activeTab === 'jobs' }"
+                    @click="activeTab = 'jobs'"
+                    hx-get="/api/jobs"
+                    hx-target="#tab-content"
+                    hx-swap="innerHTML"
+                >
+                    Jobs
+                </button>
+                <button
+                    class="tab"
+                    :class="{ 'active': activeTab === 'logs' }"
+                    @click="activeTab = 'logs'"
+                    hx-get="/api/tab/logs"
+                    hx-target="#tab-content"
+                    hx-swap="innerHTML"
+                >
+                    Logs
+                </button>
+            </div>
+
+            <!-- Tab Content -->
+            <div id="tab-content" class="tab-content">
+                {% block content %}{% endblock %}
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="progress-container">
+                <span class="progress-label">Progress:</span>
+                <div class="progress-bar" id="progress-bar">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modal-container"></div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- SSE Listeners -->
+    <script>
+        // Progress SSE
+        const progressSource = new EventSource('/api/progress/stream');
+        progressSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'progress') {
+                const percent = Math.round(data.value * 100);
+                document.getElementById('progress-fill').style.width = percent + '%';
+            }
+        };
+
+        // Logs SSE - append to logs container if it exists
+        const logsSource = new EventSource('/api/logs/stream');
+        logsSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'log') {
+                const logsContent = document.getElementById('logs-content');
+                if (logsContent) {
+                    const logEntry = document.createElement('div');
+                    logEntry.className = 'log-entry';
+                    logEntry.textContent = data.message;
+                    logsContent.appendChild(logEntry);
+                    logsContent.scrollTop = logsContent.scrollHeight;
+                }
+            }
+        };
+    </script>
+</body>
+</html>

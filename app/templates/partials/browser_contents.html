@@ -1,0 +1,51 @@
+<div class="browser-list">
+    {% if items %}
+        {% for item in items %}
+        <div class="browser-item">
+            <div class="browser-item-info">
+                {% if item.is_folder %}
+                <span class="browser-icon folder">📂</span>
+                <button
+                    class="browser-name btn-link"
+                    hx-get="/api/browse?prefix={{ item.key }}"
+                    hx-target="#browser-contents"
+                    hx-swap="innerHTML"
+                >
+                    {{ item.name }}/
+                </button>
+                {% else %}
+                <span class="browser-icon file">📄</span>
+                <span class="browser-name">{{ item.name }}</span>
+                <span class="browser-size">{{ item.size_formatted }}</span>
+                {% endif %}
+            </div>
+            <div class="browser-item-actions">
+                {% if item.is_folder %}
+                <button
+                    class="btn btn-success btn-sm"
+                    hx-post="/api/import/folder"
+                    hx-vals='{"prefix": "{{ item.key }}"}'
+                    hx-target="#toast-container"
+                    hx-swap="innerHTML"
+                >
+                    + Queue
+                </button>
+                {% else %}
+                <button
+                    class="btn btn-primary btn-sm"
+                    hx-post="/api/import/file"
+                    hx-vals='{"key": "{{ item.key }}"}'
+                    hx-swap="none"
+                >
+                    Import
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="browser-empty">
+        <p>This folder is empty</p>
+    </div>
+    {% endif %}
+</div>

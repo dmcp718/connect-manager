@@ -1,0 +1,22 @@
+{% if error %}
+<div class="alert alert-error">
+    {{ error }}
+</div>
+{% elif filespaces %}
+<label class="form-label" for="filespace">Select filespace</label>
+<select
+    id="filespace"
+    name="filespace"
+    class="form-select"
+    hx-post="/api/load-datastores"
+    hx-target="#datastore-container"
+    hx-swap="innerHTML"
+    hx-trigger="change"
+>
+    {% for fs in filespaces %}
+    <option value="{{ fs }}" {% if fs == selected %}selected{% endif %}>{{ fs }}</option>
+    {% endfor %}
+</select>
+{% else %}
+<p class="text-muted">Load filespaces using the button above</p>
+{% endif %}

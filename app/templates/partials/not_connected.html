@@ -1,0 +1,16 @@
+<div class="not-connected">
+    <div class="not-connected-icon">🔌</div>
+    <h3 class="not-connected-title">Not connected</h3>
+    <p class="not-connected-text">
+        Configure your S3 and LucidLink settings, then click "Connect & save" to get started.
+    </p>
+    <button
+        class="btn btn-secondary"
+        onclick="document.querySelector('[x-data]').__x.$data.activeTab = 'settings'"
+        hx-get="/api/tab/settings"
+        hx-target="#tab-content"
+        hx-swap="innerHTML"
+    >
+        Go to settings
+    </button>
+</div>

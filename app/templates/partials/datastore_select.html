@@ -1,0 +1,49 @@
+{% if success %}
+<div class="alert alert-success">
+    {{ success }}
+</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-error">
+    {{ error }}
+</div>
+{% endif %}
+
+{% if datastores %}
+<label class="form-label" for="datastore">Target datastore</label>
+<div class="input-group">
+    <select id="datastore" name="datastore" class="form-select">
+        {% for ds in datastores %}
+        <option value="{{ ds }}" {% if ds == selected %}selected{% endif %}>{{ ds }}</option>
+        {% endfor %}
+    </select>
+    <button
+        type="button"
+        class="btn btn-accent"
+        hx-get="/api/create-datastore-modal"
+        hx-target="#modal-container"
+        hx-swap="innerHTML"
+    >
+        + Create new
+    </button>
+</div>
+{% elif datastores is defined %}
+<label class="form-label">Target datastore</label>
+<div class="input-group">
+    <select id="datastore" name="datastore" class="form-select" disabled>
+        <option>No datastores available</option>
+    </select>
+    <button
+        type="button"
+        class="btn btn-accent"
+        hx-get="/api/create-datastore-modal"
+        hx-target="#modal-container"
+        hx-swap="innerHTML"
+    >
+        + Create new
+    </button>
+</div>
+{% else %}
+<p class="text-muted">Select a filespace first</p>
+{% endif %}

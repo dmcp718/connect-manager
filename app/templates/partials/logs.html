@@ -1,0 +1,18 @@
+<div class="logs-tab">
+    <div class="logs-tab-header">
+        <h3 class="logs-tab-title">Activity log</h3>
+        <button
+            class="btn btn-ghost btn-sm"
+            hx-post="/api/logs/clear"
+            hx-target="#logs-content"
+            hx-swap="innerHTML"
+        >
+            Clear
+        </button>
+    </div>
+    <div class="logs-tab-content" id="logs-content">
+        {% for log in logs %}
+        <div class="log-entry">{{ log }}</div>
+        {% endfor %}
+    </div>
+</div>

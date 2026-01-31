@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+*.local
+
+# Data
+*.db
+*.sqlite
+secrets.json
+
+# Build
+dist/
+build/
+
+# Project-specific excludes
+brand_guidelines/
+lab_icon/
+s3_python9_fast.py
+flask_icon.png
