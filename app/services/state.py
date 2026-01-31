@@ -25,6 +25,7 @@ class AppState:
         # Connection state
         self.is_connected: bool = False
         self.token: str = ""
+        self.api_host: str = ""
 
         # LucidLink state
         self.filespaces: Dict[str, str] = {}  # name -> id
@@ -57,6 +58,13 @@ class AppState:
             self.token = saved_token
             self.log("🔑 Loaded saved API token")
 
+        # Load API host from database
+        saved_api_host = db.get_setting("api_host")
+        if saved_api_host:
+            self.api_host = saved_api_host
+        else:
+            self.api_host = ""
+
         # Load last used profile
         profile = db.get_default_profile()
         if profile:
@@ -77,6 +85,10 @@ class AppState:
         # Save secrets to keyring
         if save_secrets and self.token:
             secrets.set_lucidlink_token(self.token)
+
+        # Save API host to database
+        if self.api_host:
+            db.set_setting("api_host", self.api_host)
 
         # Save profile to database
         if self.selected_filespace and self.selected_datastore:

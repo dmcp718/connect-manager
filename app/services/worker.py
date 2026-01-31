@@ -63,16 +63,20 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         if not job.get("filespace_id") or not job.get("datastore_id"):
             raise ValueError("Job missing filespace_id or datastore_id")
 
+        # Get saved API host
+        api_host = db.get_setting("api_host") or ""
+
         await log(f"📋 Using filespace: {job['filespace_id'][:8]}...")
 
         # Initialize clients
         s3_service = S3Service(access_key=aws_key, secret_key=aws_secret)
 
-        ll_client = LucidLinkClient()
+        ll_client = LucidLinkClient(api_host=api_host)
         ll_client.configure(
             token=token,
             filespace_id=job["filespace_id"],
             datastore_id=job["datastore_id"],
+            api_host=api_host,
         )
 
         # Scan for files

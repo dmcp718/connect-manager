@@ -66,6 +66,7 @@ async def index(request: Request):
         "selected_filespace": state.selected_filespace,
         "selected_datastore": state.selected_datastore,
         "saved_token": state.token,
+        "saved_api_host": state.api_host,
         "saved_aws_key": aws_key or "",
         "has_saved_aws_secret": bool(aws_secret),
     })
@@ -74,10 +75,17 @@ async def index(request: Request):
 # ============== Settings API ==============
 
 @app.post("/api/load-filespaces", response_class=HTMLResponse)
-async def load_filespaces(request: Request, token: str = Form(...)):
+async def load_filespaces(
+    request: Request,
+    token: str = Form(...),
+    api_host: Optional[str] = Form(None),
+):
     """Load filespaces from LucidLink API."""
-    ll_client = LucidLinkClient()
-    result = await ll_client.list_filespaces(token)
+    # Use provided api_host or fall back to saved/default
+    effective_host = api_host.strip() if api_host else state.api_host
+
+    ll_client = LucidLinkClient(api_host=effective_host)
+    result = await ll_client.list_filespaces(token, api_host=effective_host)
 
     if isinstance(result, str):
         # Error occurred
@@ -90,6 +98,7 @@ async def load_filespaces(request: Request, token: str = Form(...)):
 
     state.filespaces = {fs.get("name"): fs.get("id") for fs in result}
     state.token = token
+    state.api_host = effective_host
     state.log(f"✅ Loaded {len(result)} filespaces")
 
     return templates.TemplateResponse("partials/filespace_select.html", {
@@ -154,11 +163,12 @@ async def connect(
         state.current_bucket = bucket
 
         # Configure LucidLink client
-        state.ll_client = LucidLinkClient()
+        state.ll_client = LucidLinkClient(api_host=state.api_host)
         state.ll_client.configure(
             token=state.token,
             filespace_id=state.filespaces[state.selected_filespace],
             datastore_id=state.datastores[datastore],
+            api_host=state.api_host,
         )
         state.selected_datastore = datastore
         state.is_connected = True
@@ -494,6 +504,7 @@ async def tab_settings(request: Request):
         "selected_datastore": state.selected_datastore,
         "current_bucket": state.current_bucket,
         "saved_token": state.token,
+        "saved_api_host": state.api_host,
         "saved_aws_key": aws_key or "",
         "has_saved_aws_secret": bool(aws_secret),
     })

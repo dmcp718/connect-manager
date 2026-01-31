@@ -15,18 +15,21 @@ LL_HOST = os.getenv("LL_API_HOST", "https://dev-admin-api.solutions-eng.online:8
 class LucidLinkClient:
     """Async client for LucidLink REST API."""
 
-    def __init__(self):
+    def __init__(self, api_host: str = ""):
         self.token: str = ""
         self.filespace_id: str = ""
         self.datastore_id: str = ""
         self.base_url: str = ""
+        self.api_host: str = api_host or LL_HOST
 
-    def configure(self, token: str, filespace_id: str, datastore_id: str) -> None:
+    def configure(self, token: str, filespace_id: str, datastore_id: str, api_host: str = "") -> None:
         """Configure the client with authentication and IDs."""
         self.token = self._clean_token(token)
         self.filespace_id = filespace_id
         self.datastore_id = datastore_id
-        self.base_url = f"{LL_HOST}/filespaces/{self.filespace_id}"
+        if api_host:
+            self.api_host = api_host
+        self.base_url = f"{self.api_host}/filespaces/{self.filespace_id}"
 
     def _clean_token(self, token: str) -> str:
         """Remove Bearer prefix if present."""
@@ -40,9 +43,10 @@ class LucidLinkClient:
             "accept": "application/json",
         }
 
-    async def list_filespaces(self, token: str) -> Union[List[Dict], str]:
+    async def list_filespaces(self, token: str, api_host: str = "") -> Union[List[Dict], str]:
         """List all available filespaces."""
-        url = f"{LL_HOST}/filespaces"
+        host = api_host or self.api_host
+        url = f"{host}/filespaces"
         headers = {
             "Authorization": f"Bearer {self._clean_token(token)}",
             "accept": "application/json",
@@ -69,9 +73,10 @@ class LucidLinkClient:
         except Exception as e:
             return f"CONN_ERR: {e}"
 
-    async def list_datastores(self, token: str, filespace_id: str) -> List[Dict]:
+    async def list_datastores(self, token: str, filespace_id: str, api_host: str = "") -> List[Dict]:
         """List datastores for a filespace."""
-        url = f"{LL_HOST}/filespaces/{filespace_id}/external/data-stores"
+        host = api_host or self.api_host
+        url = f"{host}/filespaces/{filespace_id}/external/data-stores"
         headers = {
             "Authorization": f"Bearer {self._clean_token(token)}",
             "accept": "application/json",
@@ -102,9 +107,11 @@ class LucidLinkClient:
         endpoint: Optional[str],
         access_key: str,
         secret_key: str,
+        api_host: str = "",
     ) -> str:
         """Create a new S3 datastore."""
-        url = f"{LL_HOST}/filespaces/{filespace_id}/external/data-stores"
+        host = api_host or self.api_host
+        url = f"{host}/filespaces/{filespace_id}/external/data-stores"
         headers = {
             "Authorization": f"Bearer {self._clean_token(token)}",
             "Content-Type": "application/json",
