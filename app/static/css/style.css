@@ -927,6 +927,11 @@ p {
     font-variant-numeric: tabular-nums;
 }
 
+.job-throughput {
+    color: var(--color-neon);
+    font-variant-numeric: tabular-nums;
+}
+
 .job-progress-bar {
     margin-top: var(--space-sm);
     height: 4px;

@@ -272,7 +272,7 @@ def update_job(
 
 
 def list_jobs(limit: int = 50) -> list:
-    """List recent jobs with duration calculation."""
+    """List recent jobs with duration and throughput calculation."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -283,7 +283,16 @@ def list_jobs(limit: int = 50) -> list:
                 WHEN started_at IS NOT NULL AND status = 'running' THEN
                     CAST((julianday('now') - julianday(started_at)) * 86400 AS INTEGER)
                 ELSE NULL
-            END as duration_seconds
+            END as duration_seconds,
+            CASE
+                WHEN started_at IS NOT NULL AND completed_at IS NOT NULL
+                     AND (julianday(completed_at) - julianday(started_at)) * 86400 > 0 THEN
+                    ROUND(CAST(completed_files AS REAL) / ((julianday(completed_at) - julianday(started_at)) * 86400), 2)
+                WHEN started_at IS NOT NULL AND status = 'running'
+                     AND (julianday('now') - julianday(started_at)) * 86400 > 0 THEN
+                    ROUND(CAST(completed_files AS REAL) / ((julianday('now') - julianday(started_at)) * 86400), 2)
+                ELSE NULL
+            END as entries_per_second
         FROM import_jobs
         ORDER BY created_at DESC
         LIMIT ?
