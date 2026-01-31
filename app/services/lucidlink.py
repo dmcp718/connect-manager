@@ -13,7 +13,7 @@ LL_HOST = os.getenv("LL_API_HOST", "https://dev-admin-api.solutions-eng.online:8
 
 
 class LucidLinkClient:
-    """Async client for LucidLink REST API."""
+    """Async client for LucidLink REST API with connection pooling."""
 
     def __init__(self, api_host: str = ""):
         self.token: str = ""
@@ -21,6 +21,7 @@ class LucidLinkClient:
         self.datastore_id: str = ""
         self.base_url: str = ""
         self.api_host: str = api_host or LL_HOST
+        self._client: Optional[httpx.AsyncClient] = None
 
     def configure(self, token: str, filespace_id: str, datastore_id: str, api_host: str = "") -> None:
         """Configure the client with authentication and IDs."""
@@ -30,6 +31,25 @@ class LucidLinkClient:
         if api_host:
             self.api_host = api_host
         self.base_url = f"{self.api_host}/filespaces/{self.filespace_id}"
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create a shared HTTP client with connection pooling."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=30.0,
+                limits=httpx.Limits(
+                    max_connections=100,
+                    max_keepalive_connections=50,
+                    keepalive_expiry=30.0,
+                ),
+            )
+        return self._client
+
+    async def close(self) -> None:
+        """Close the HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     def _clean_token(self, token: str) -> str:
         """Remove Bearer prefix if present."""
@@ -151,16 +171,16 @@ class LucidLinkClient:
 
         try:
             url = f"{self.base_url}/entries/resolve"
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    url, headers=self._get_headers(), params={"path": path}
-                )
+            client = await self._get_client()
+            resp = await client.get(
+                url, headers=self._get_headers(), params={"path": path}
+            )
 
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if "data" in data:
-                        return data["data"].get("id")
-                    return data.get("id")
+            if resp.status_code == 200:
+                data = resp.json()
+                if "data" in data:
+                    return data["data"].get("id")
+                return data.get("id")
 
         except Exception:
             pass
@@ -181,22 +201,20 @@ class LucidLinkClient:
 
         try:
             url = f"{self.base_url}/entries"
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(url, headers=self._get_headers(), json=payload)
+            client = await self._get_client()
+            resp = await client.post(url, headers=self._get_headers(), json=payload)
 
-                if resp.status_code in [200, 201]:
-                    data = resp.json()
-                    folder_id = data.get("id") or data.get("data", {}).get("id")
-                    return folder_id, ""
-                elif resp.status_code == 409:
-                    return "CONFLICT", ""
-                else:
-                    return None, f"HTTP {resp.status_code}: {resp.text}"
+            if resp.status_code in [200, 201]:
+                data = resp.json()
+                folder_id = data.get("id") or data.get("data", {}).get("id")
+                return folder_id, ""
+            elif resp.status_code == 409:
+                return "CONFLICT", ""
+            else:
+                return None, f"HTTP {resp.status_code}: {resp.text}"
 
         except Exception as e:
             return None, str(e)
-
-        return None, "Unknown error"
 
     async def import_file(self, s3_key: str, ll_path: str) -> tuple[int, str]:
         """Import a file from S3 to LucidLink. Returns (status_code, error_message)."""
@@ -215,18 +233,22 @@ class LucidLinkClient:
 
         try:
             url = f"{self.base_url}/external/entries"
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(url, headers=self._get_headers(), json=payload)
-                error_msg = ""
-                if resp.status_code >= 400:
-                    try:
-                        error_msg = resp.text
-                    except Exception:
-                        error_msg = f"HTTP {resp.status_code}"
-                return resp.status_code, error_msg
+            client = await self._get_client()
+            resp = await client.post(url, headers=self._get_headers(), json=payload)
+            error_msg = ""
+            if resp.status_code >= 400:
+                try:
+                    error_msg = resp.text[:500] if resp.text else f"HTTP {resp.status_code} (no body)"
+                except Exception:
+                    error_msg = f"HTTP {resp.status_code}"
+            return resp.status_code, error_msg
 
+        except httpx.TimeoutException:
+            return 500, "Request timeout"
+        except httpx.ConnectError as e:
+            return 500, f"Connection error: {e}"
         except Exception as e:
-            return 500, str(e)
+            return 500, f"Exception: {type(e).__name__}: {e}"
 
     async def ensure_structure(self, full_key: str) -> tuple[bool, str]:
         """Ensure the folder structure exists for a given key. Returns (success, error_message)."""

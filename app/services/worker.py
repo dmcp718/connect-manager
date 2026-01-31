@@ -51,6 +51,7 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
     db.update_job(job_id, status="running")
     await log(f"🚀 Job #{job_id} started: {job['prefix']}")
 
+    ll_client = None
     try:
         # Get credentials
         token = secrets.get_lucidlink_token()
@@ -104,6 +105,7 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         sorted_dirs = sorted(list(unique_dirs), key=len)
         await log(f"📂 Creating {len(sorted_dirs)} directories...")
 
+        # Create folders sequentially (parallel causes race conditions)
         for d in sorted_dirs:
             success, error = await ll_client.ensure_structure(d + "/dummy_file")
             if not success:
@@ -119,7 +121,9 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         await log("🚀 Importing files...")
         completed = 0
         failed = 0
-        batch_size = 10
+        total_new = 0
+        total_skipped = 0
+        batch_size = 25  # Tuned for throughput
 
         for i in range(0, len(keys), batch_size):
             # Check for cancellation
@@ -134,22 +138,37 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
+            batch_new = 0
+            batch_skipped = 0
+            batch_failed = 0
+            first_error = None
             for key, result in zip(batch, results):
-                fname = key.split("/")[-1]
                 if isinstance(result, Exception):
-                    await log(f"❌ {fname}: {result}")
-                    failed += 1
+                    batch_failed += 1
+                    if not first_error:
+                        first_error = f"Exception: {result}"
                 else:
                     code, error_msg = result
-                    if code in [200, 201]:
-                        await log(f"✅ {fname}")
-                        completed += 1
-                    elif code in [400, 409]:
-                        await log(f"⏭️ {fname} (exists)")
-                        completed += 1
+                    if code in [200, 201]:  # Newly imported
+                        batch_new += 1
+                    elif code in [400, 409]:  # Already exists
+                        batch_skipped += 1
                     else:
-                        await log(f"❌ {fname} (HTTP {code}): {error_msg}")
-                        failed += 1
+                        batch_failed += 1
+                        if not first_error:
+                            first_error = f"HTTP {code}: {error_msg[:200]}"
+
+            total_new += batch_new
+            total_skipped += batch_skipped
+            completed += batch_new + batch_skipped
+            failed += batch_failed
+
+            # Log batch progress with breakdown
+            progress_pct = int((completed + failed) / total * 100)
+            if first_error and batch_failed > 0:
+                await log(f"📊 Progress: {completed + failed}/{total} ({progress_pct}%) - {batch_new} new, {batch_skipped} skipped, {batch_failed} errors: {first_error}")
+            else:
+                await log(f"📊 Progress: {completed + failed}/{total} ({progress_pct}%) - {batch_new} new, {batch_skipped} skipped, {batch_failed} errors")
 
             # Update progress
             db.update_job(
@@ -158,6 +177,9 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
                 failed_files=failed,
             )
 
+            # Small delay between batches to avoid rate limiting
+            await asyncio.sleep(0.05)
+
         # Final status
         job = db.get_job(job_id)
         if job and job.get("status") == "cancelled":
@@ -165,13 +187,17 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
             return {"status": "cancelled", "completed": completed, "failed": failed}
 
         db.update_job(job_id, status="completed")
-        await log(f"✅ Job #{job_id} complete: {completed} imported, {failed} failed")
-        return {"status": "completed", "completed": completed, "failed": failed}
+        await log(f"✅ Job #{job_id} complete: {total_new} new, {total_skipped} skipped, {failed} failed")
+        return {"status": "completed", "completed": completed, "failed": failed, "new": total_new, "skipped": total_skipped}
 
     except Exception as e:
         await log(f"❌ Job #{job_id} failed: {e}")
         db.update_job(job_id, status="failed", error_message=str(e))
         return {"status": "failed", "message": str(e)}
+    finally:
+        # Always close the HTTP client to release connections
+        if ll_client:
+            await ll_client.close()
 
 
 async def on_startup(ctx: dict) -> None:
