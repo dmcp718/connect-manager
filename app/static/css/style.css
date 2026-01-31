@@ -390,6 +390,16 @@ p {
     background-color: #E66D2E;
 }
 
+/* Indigo */
+.btn-indigo {
+    background-color: var(--color-indigo);
+    color: var(--color-white);
+}
+
+.btn-indigo:hover:not(:disabled) {
+    background-color: #4D43C9;
+}
+
 /* Success - Green */
 .btn-success {
     background-color: #2b8238;
