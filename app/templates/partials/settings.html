@@ -1,4 +1,11 @@
-<div class="settings-container">
+<div class="settings-container" x-data="{
+    bucket: '{{ current_bucket or 'native-layout-demonstration' }}',
+    token: '{{ saved_token or '' }}',
+    datastore: '{{ selected_datastore or '' }}',
+    get isValid() {
+        return this.bucket.trim() !== '' && this.datastore.trim() !== ''
+    }
+}">
     <!-- S3 Explorer Configuration -->
     <div class="card">
         <div class="card-header">
@@ -14,7 +21,7 @@
                         id="bucket"
                         name="bucket"
                         class="form-input"
-                        value="{{ current_bucket or 'native-layout-demonstration' }}"
+                        x-model="bucket"
                         placeholder="Enter S3 bucket name"
                     >
                 </div>
@@ -98,7 +105,7 @@
             </div>
 
             <!-- Datastore Select -->
-            <div id="datastore-container" class="form-group">
+            <div id="datastore-container" class="form-group" @datastore-changed.window="datastore = $event.detail.value">
                 {% include "partials/datastore_select.html" %}
             </div>
         </div>
@@ -111,7 +118,12 @@
         hx-swap="innerHTML"
         hx-include="#bucket, #aws_key, #aws_secret, #datastore"
     >
-        <button type="submit" class="btn btn-primary btn-lg btn-full">
+        <button
+            type="submit"
+            class="btn btn-primary btn-lg btn-full"
+            :disabled="!isValid"
+            :class="{ 'btn-disabled': !isValid }"
+        >
             ✓ Connect & save
         </button>
     </form>

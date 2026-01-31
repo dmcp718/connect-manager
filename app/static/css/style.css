@@ -352,9 +352,11 @@ p {
     white-space: nowrap;
 }
 
-.btn:disabled {
+.btn:disabled,
+.btn.btn-disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    pointer-events: none;
 }
 
 /* Primary - Neon background, Charcoal text */

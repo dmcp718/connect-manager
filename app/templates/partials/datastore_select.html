@@ -13,7 +13,13 @@
 {% if datastores %}
 <label class="form-label" for="datastore">Target datastore</label>
 <div class="input-group">
-    <select id="datastore" name="datastore" class="form-select">
+    <select
+        id="datastore"
+        name="datastore"
+        class="form-select"
+        @change="$dispatch('datastore-changed', { value: $el.value })"
+        x-init="$dispatch('datastore-changed', { value: '{{ selected or datastores[0] }}' })"
+    >
         {% for ds in datastores %}
         <option value="{{ ds }}" {% if ds == selected %}selected{% endif %}>{{ ds }}</option>
         {% endfor %}

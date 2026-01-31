@@ -14,5 +14,6 @@ dependencies = [
     "arq>=0.26.0",
 ]
 
-[project.scripts]
-lucidlink-labs = "main:run"
+[tool.setuptools]
+packages = ["services"]
+py-modules = ["main"]
