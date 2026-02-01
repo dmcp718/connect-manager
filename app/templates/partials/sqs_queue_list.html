@@ -67,7 +67,7 @@
                             hx-delete="/api/sqs/queues/{{ queue.id }}"
                             hx-target="#sqs-queues-section"
                             hx-swap="outerHTML"
-                            hx-confirm="Delete queue '{{ queue.name }}'? This will stop event-driven imports for this queue."
+                            hx-confirm="Delete queue '{{ queue.name }}'? This will delete the SQS queue from AWS and remove S3 bucket notifications."
                             title="Delete queue"
                         >
                             <img src="/static/img/icons/trash.svg" alt="Delete" class="icon icon-sm icon-muted">

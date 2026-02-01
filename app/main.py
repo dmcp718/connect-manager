@@ -1148,12 +1148,72 @@ async def add_sqs_queue(
 
 @app.delete("/api/sqs/queues/{queue_id}", response_class=HTMLResponse)
 async def delete_sqs_queue(request: Request, queue_id: str):
-    """Delete an SQS queue configuration."""
-    queue = db.get_sqs_queue(queue_id)
-    queue_name = queue.get("name", queue_id) if queue else queue_id
+    """Delete an SQS queue configuration and clean up AWS resources."""
+    from services import secrets as sec
+    from services.sqs_service import SQSService, S3NotificationService, SQSError, S3NotificationError
 
+    queue = db.get_sqs_queue(queue_id)
+    if not queue:
+        # Queue not found, just return the list
+        sqs_queues = db.list_sqs_queues()
+        browsable_datastores = state.get_browsable_datastores()
+        for q in sqs_queues:
+            q["events_today"] = db.get_sqs_event_count_today(q["id"])
+            cred = db.get_datastore_credentials(q["datastore_id"])
+            if cred:
+                q["datastore_name"] = cred.get("datastore_name", "")
+        return templates.TemplateResponse("partials/sqs_queue_list.html", {
+            "request": request,
+            "sqs_credentials": db.get_sqs_credentials(),
+            "sqs_queues": sqs_queues,
+            "browsable_datastores": browsable_datastores,
+            "error": "Queue not found",
+        })
+
+    queue_name = queue.get("name", queue_id)
+    queue_url = queue.get("queue_url")
+    queue_arn = queue.get("queue_arn")
+    queue_region = queue.get("region", "us-east-1")
+    datastore_id = queue.get("datastore_id")
+
+    # Get credentials for AWS cleanup
+    sqs_creds = db.get_sqs_credentials()
+    cleanup_errors = []
+
+    if sqs_creds and queue_url:
+        access_key = sqs_creds.get("access_key")
+        secret_key_ref = sqs_creds.get("secret_key_encrypted")
+        secret_key = sec.get_secret(f"sqs_secret_{secret_key_ref}")
+
+        if access_key and secret_key:
+            # 1. Remove S3 bucket notification
+            if queue_arn and datastore_id:
+                ds_cred = db.get_datastore_credentials(datastore_id)
+                if ds_cred:
+                    bucket_name = ds_cred.get("bucket_name")
+                    if bucket_name:
+                        try:
+                            s3_notif = S3NotificationService(access_key, secret_key, queue_region)
+                            s3_notif.remove_sqs_notification(bucket_name, queue_arn)
+                            state.log(f"Removed S3 notification from bucket '{bucket_name}'")
+                        except S3NotificationError as e:
+                            cleanup_errors.append(f"S3 notification: {e}")
+
+            # 2. Delete SQS queue from AWS
+            try:
+                sqs = SQSService(access_key, secret_key, queue_region)
+                sqs.delete_queue(queue_url)
+                state.log(f"Deleted SQS queue '{queue_name}' from AWS")
+            except SQSError as e:
+                cleanup_errors.append(f"SQS queue: {e}")
+
+    # Delete from local database
     db.delete_sqs_queue(queue_id)
-    state.log(f"SQS queue '{queue_name}' deleted")
+
+    if cleanup_errors:
+        state.log(f"Queue '{queue_name}' removed (some AWS cleanup failed: {'; '.join(cleanup_errors)})")
+    else:
+        state.log(f"Queue '{queue_name}' fully deleted")
 
     # Return updated queue list
     sqs_queues = db.list_sqs_queues()
