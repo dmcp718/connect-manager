@@ -1,6 +1,6 @@
-<!-- Invite User Modal -->
+<!-- Add User Modal -->
 <div class="modal-header">
-    <h3>Invite user</h3>
+    <h3>Add user</h3>
     <button class="modal-close" @click="closeModal()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -18,7 +18,7 @@
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                 <polyline points="22 4 12 14.01 9 11.01"></polyline>
             </svg>
-            User invited successfully
+            User created
         </div>
 
         <div class="credentials-box">
@@ -67,7 +67,7 @@
 
         <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="closeModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary">Send invite</button>
+            <button type="submit" class="btn btn-primary">Create user</button>
         </div>
     </form>
     {% endif %}
