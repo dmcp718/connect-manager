@@ -38,6 +38,7 @@ Open http://localhost:8000 in your browser.
 | `status` | Show container status |
 | `build` | Rebuild and start |
 | `clean` | Stop and remove all containers/volumes |
+| `help` | Show usage information |
 
 Example: `./run.sh logs` or `run.bat restart`
 
@@ -116,7 +117,7 @@ New files uploaded to the S3 bucket will be automatically imported to LucidLink.
 └──────┬──────┴──────┬──────┴──────┬──────┴─────────┬─────────┘
        │             │             │                │
        │        SQS Polling        │                │
-       │        (30s interval)     │                │
+       │        (10s interval)     │                │
        ▼             ▼             ▼                │
 ┌─────────────────────────────────────────────┐    │
 │           LucidLink REST API                │    │
