@@ -7,6 +7,7 @@ A web application for importing S3 objects into LucidLink filespaces using the E
 - **DataStore Management** - Create, view, and delete S3 DataStores in LucidLink
 - **S3 Browser** - Navigate and explore S3 buckets linked to DataStores
 - **Bulk Import** - Import individual files or entire folders with parallel processing
+- **AWS SQS Event Stream** - Automatic imports triggered by S3 event notifications
 - **Job Queue** - Track import progress with real-time updates
 - **Activity Logs** - Real-time SSE-based logging
 
@@ -80,6 +81,29 @@ Note: Manual setup requires `VALKEY_HOST` and `VALKEY_PORT` environment variable
    - **+ Queue** - Queue a folder for bulk import
 4. Monitor progress in the **Jobs** tab
 
+### AWS SQS Event Stream (Automatic Imports)
+
+Automatically import new files when they're uploaded to your S3 bucket.
+
+> **Note:** This feature only works with AWS S3 buckets (not S3-compatible storage).
+
+1. Go to the **AWS SQS** tab
+2. Enter IAM credentials with SQS and S3 permissions
+3. Click **Add queue** → **Create new queue**
+4. Select the target DataStore and click **Create queue**
+
+The app will:
+- Create an SQS queue in AWS
+- Configure the queue policy for S3 notifications
+- Set up S3 bucket event notifications automatically
+
+New files uploaded to the S3 bucket will be automatically imported to LucidLink.
+
+**Required IAM Permissions:**
+- `sqs:CreateQueue`, `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`
+- `sqs:ReceiveMessage`, `sqs:DeleteMessage`
+- `s3:GetBucketNotificationConfiguration`, `s3:PutBucketNotificationConfiguration`
+
 ## Architecture
 
 ```
@@ -87,10 +111,12 @@ Note: Manual setup requires `VALKEY_HOST` and `VALKEY_PORT` environment variable
 │                    Docker Compose                            │
 ├─────────────┬─────────────┬─────────────┬───────────────────┤
 │   Web App   │  Worker 1   │  Worker 2   │      Valkey       │
-│  (FastAPI)  │   (ARQ)     │   (ARQ)     │  (Job Queue)      │
+│  (FastAPI)  │ (ARQ+SQS)   │ (ARQ+SQS)   │  (Job Queue)      │
 │   :8000     │             │             │     :6379         │
 └──────┬──────┴──────┬──────┴──────┬──────┴─────────┬─────────┘
        │             │             │                │
+       │        SQS Polling        │                │
+       │        (30s interval)     │                │
        ▼             ▼             ▼                │
 ┌─────────────────────────────────────────────┐    │
 │           LucidLink REST API                │    │
@@ -98,6 +124,12 @@ Note: Manual setup requires `VALKEY_HOST` and `VALKEY_PORT` environment variable
 └─────────────────────────────────────────────┘    │
        │                                           │
        ▼                                           │
+┌─────────────────────────────────────────────┐    │
+│              AWS SQS Queue                  │    │
+│       (S3 Event Notifications)              │    │
+└──────────────────┬──────────────────────────┘    │
+                   │                               │
+                   ▼                               │
 ┌─────────────────────────────────────────────┐    │
 │              S3 Buckets                     │◄───┘
 │         (via boto3/httpx)                   │
@@ -113,6 +145,8 @@ lucidlink-connect-web-ui/
 │   ├── services/
 │   │   ├── lucidlink.py        # LucidLink API client
 │   │   ├── s3_service.py       # S3 operations
+│   │   ├── sqs_service.py      # SQS + S3 notification setup
+│   │   ├── sqs_poller.py       # SQS polling cron job
 │   │   ├── worker.py           # ARQ job worker
 │   │   ├── state.py            # Application state
 │   │   ├── database.py         # SQLite persistence

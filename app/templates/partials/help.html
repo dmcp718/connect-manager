@@ -112,6 +112,65 @@
 
     <div class="card">
         <div class="card-header">
+            <h3 class="card-title">AWS SQS event stream</h3>
+        </div>
+        <div class="card-body">
+            <div class="help-section">
+                <p class="help-warning">This feature only works with <strong>AWS S3 buckets</strong>. It does not support S3-compatible storage (MinIO, Wasabi, Backblaze B2, etc.).</p>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">What it does</h4>
+                <p>Automatically imports new files to LucidLink when they're uploaded to your S3 bucket. Uses AWS SQS to receive S3 event notifications.</p>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">Setup</h4>
+                <ol class="help-list">
+                    <li>Go to the <strong>AWS SQS</strong> tab</li>
+                    <li>Enter IAM credentials with SQS and S3 permissions</li>
+                    <li>Click <strong>Add queue</strong> and select <strong>Create new queue</strong></li>
+                    <li>Enter a queue name and select the AWS region</li>
+                    <li>Select the target DataStore (must have saved credentials)</li>
+                    <li>Keep "Auto-configure S3 bucket notifications" checked</li>
+                    <li>Click <strong>Create queue</strong></li>
+                </ol>
+                <p>The app automatically configures the SQS queue policy and S3 bucket event notifications.</p>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">Required IAM permissions</h4>
+                <p>Your IAM credentials need the following permissions:</p>
+                <ul class="help-list">
+                    <li><code>sqs:CreateQueue</code> - Create new queues</li>
+                    <li><code>sqs:GetQueueAttributes</code> - Read queue settings</li>
+                    <li><code>sqs:SetQueueAttributes</code> - Set queue policy</li>
+                    <li><code>sqs:ReceiveMessage</code> - Receive S3 events</li>
+                    <li><code>sqs:DeleteMessage</code> - Delete processed messages</li>
+                    <li><code>s3:GetBucketNotificationConfiguration</code> - Read bucket notifications</li>
+                    <li><code>s3:PutBucketNotificationConfiguration</code> - Configure bucket notifications</li>
+                </ul>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">How it works</h4>
+                <ol class="help-list">
+                    <li>S3 sends event notifications to the SQS queue when files are created</li>
+                    <li>Workers poll the queue every 30 seconds</li>
+                    <li>New files are automatically imported to LucidLink</li>
+                    <li>Events are tracked in the "Recent events" section</li>
+                </ol>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">Pause and resume</h4>
+                <p>Use the <strong>Pause</strong> button to temporarily stop polling a queue. Events will accumulate in SQS (retained for 4 days by default) and be processed when you click <strong>Resume</strong>.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
             <h3 class="card-title">API documentation</h3>
         </div>
         <div class="card-body">
@@ -172,6 +231,16 @@
                 <ul class="help-list">
                     <li><strong>Already exists</strong> - File was already imported (counted as skipped).</li>
                     <li><strong>Failed to create folder</strong> - Permission issue in LucidLink filespace.</li>
+                </ul>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">SQS errors</h4>
+                <ul class="help-list">
+                    <li><strong>Failed to create queue</strong> - IAM credentials lack <code>sqs:CreateQueue</code> permission.</li>
+                    <li><strong>Unable to validate destination</strong> - Queue policy doesn't allow S3 to send messages. Try recreating the queue.</li>
+                    <li><strong>Failed to configure bucket notifications</strong> - IAM credentials lack S3 notification permissions.</li>
+                    <li><strong>Queue not receiving events</strong> - Verify the S3 bucket has event notifications configured (check in AWS Console).</li>
                 </ul>
             </div>
         </div>
