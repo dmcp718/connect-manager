@@ -2,15 +2,43 @@
 
 Web app for importing S3 objects into LucidLink filespaces via External Data Store API.
 
+## Branches
+- **main**: Single-user mode, no authentication
+- **multi-user**: Multi-user with JWT auth, admin/user roles, Caddy HTTPS
+
 ## Stack
 - **Backend**: FastAPI + Python 3.12, ARQ workers, Valkey (Redis-compatible)
 - **Frontend**: HTMX + Alpine.js, custom CSS (LucidLink brand)
-- **Services**: web (:8000), worker x2, valkey (:6379)
+- **Auth** (multi-user): JWT tokens, bcrypt passwords, per-user data isolation
+- **Services**: web (:8000), worker x2, valkey (:6379), caddy (:443 prod)
 
 ## Key Files
-**Backend**: `app/main.py` (routes), `app/services/lucidlink.py` (API client), `app/services/s3_service.py` (boto3), `app/services/worker.py` (ARQ + SQS polling), `app/services/database.py` (SQLite), `app/services/sqs_service.py`, `app/services/sqs_poller.py`
+**Backend**: `app/main.py` (routes), `app/services/lucidlink.py` (API client), `app/services/s3_service.py` (boto3), `app/services/worker.py` (ARQ + SQS polling), `app/services/database.py` (SQLite)
+
+**Auth** (multi-user): `app/services/auth.py`, `app/services/user_state.py`, `app/routes/auth.py`, `app/middleware/auth.py`
 
 **Frontend**: `app/templates/base.html` (layout), `app/templates/partials/*.html` (tabs/modals), `app/static/css/style.css`
+
+## Development
+```bash
+./run.sh              # Start (HTTP :8000)
+./run.sh build        # Rebuild
+./run.sh logs         # View logs
+```
+
+## Production (multi-user branch)
+```bash
+# Configure .env
+DOMAIN=connect.example.com
+JWT_SECRET_KEY=<openssl rand -hex 32>
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=secure-password
+
+# Start with Caddy reverse proxy
+./run.sh prod         # HTTPS :443
+./run.sh prod-build   # Rebuild prod
+./run.sh prod-logs    # View logs
+```
 
 ## API Endpoints
 ```
@@ -23,34 +51,19 @@ POST /api/import/file|folder           # Import to LucidLink
 GET /api/jobs, POST /api/jobs/{id}/cancel, DELETE /api/jobs/{id}
 POST|DELETE /api/sqs/credentials       # SQS IAM creds
 POST|DELETE /api/sqs/queues            # SQS queue config
-POST /api/sqs/queues/{id}/pause|resume
 ```
 
-## LucidLink REST API
+## Auth Endpoints (multi-user)
 ```
-GET  /filespaces
-GET  /filespaces/{id}/external/data-stores
-POST /filespaces/{id}/external/data-stores
-DELETE /filespaces/{id}/external/data-stores/{dsId}
-POST /filespaces/{id}/external/entries
-```
-
-## Development
-```bash
-./run.sh              # Start
-./run.sh build        # Rebuild
-./run.sh logs         # View logs
-./run.sh help         # Show commands
+POST /api/auth/login                   # Login, returns JWT cookie
+POST /api/auth/logout                  # Logout, clears cookie
+POST /api/auth/change-password         # Change password
+GET /api/tab/account                   # Account settings + user management
+POST /api/auth/users/invite            # Create user (admin)
+DELETE /api/auth/users/{id}            # Delete user (admin)
 ```
 
 ## Brand Guidelines
 - **Colors**: Charcoal (#151519), Neon (#B0FB15), Indigo (#5E53E0)
 - **Typography**: Aeonik (headings), Inter (body)
 - **Icons**: Lucide SVG, **Case**: Sentence case only
-
-## SQS Event Stream
-Auto-imports S3 objects via SQS notifications. Workers poll every 10s with distributed lock.
-
-**Required IAM**: `sqs:CreateQueue`, `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `s3:GetBucketNotificationConfiguration`, `s3:PutBucketNotificationConfiguration`
-
-**DB Tables**: `sqs_credentials`, `sqs_queues`, `sqs_events`

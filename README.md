@@ -2,6 +2,13 @@
 
 A web application for importing S3 objects into LucidLink filespaces using the External Data Store API.
 
+## Branches
+
+| Branch | Description |
+|--------|-------------|
+| `main` | Single-user mode, no authentication required |
+| `multi-user` | Multi-user with JWT authentication, admin/user roles, production-ready |
+
 ## Features
 
 - **DataStore Management** - Create, view, and delete S3 DataStores in LucidLink
@@ -10,6 +17,13 @@ A web application for importing S3 objects into LucidLink filespaces using the E
 - **AWS SQS Event Stream** - Automatic imports triggered by S3 event notifications
 - **Job Queue** - Track import progress with real-time updates
 - **Activity Logs** - Real-time SSE-based logging
+
+### Multi-User Branch Additional Features
+- **User Authentication** - JWT-based login with secure httponly cookies
+- **Role-Based Access** - Admin and standard user roles
+- **User Management** - Admins can add/remove users
+- **Per-User Data Isolation** - Each user's DataStore credentials are private
+- **Production Deployment** - Caddy reverse proxy with automatic HTTPS
 
 ## Quick Start
 
@@ -39,6 +53,15 @@ Open http://localhost:8000 in your browser.
 | `build` | Rebuild and start |
 | `clean` | Stop and remove all containers/volumes |
 | `help` | Show usage information |
+
+**Production Commands (multi-user branch):**
+
+| Command | Description |
+|---------|-------------|
+| `prod` | Start with Caddy reverse proxy (HTTPS) |
+| `prod-build` | Rebuild and start production |
+| `prod-stop` | Stop production deployment |
+| `prod-logs` | Show production logs |
 
 Example: `./run.sh logs` or `run.bat restart`
 
@@ -186,6 +209,39 @@ Swagger UI is available at your API endpoint + `/docs`:
 | `VALKEY_PORT` | `6379` | Valkey/Redis port |
 | `DATA_DIR` | `/data` | Persistent data directory |
 | `ARQ_MAX_JOBS` | `4` | Max concurrent jobs per worker |
+
+**Production Variables (multi-user branch):**
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DOMAIN` | Yes | Your domain name (e.g., `connect.example.com`) |
+| `JWT_SECRET_KEY` | Yes | 64-char hex string: `openssl rand -hex 32` |
+| `ADMIN_EMAIL` | No | Initial admin email (default: `admin@localhost`) |
+| `ADMIN_PASSWORD` | No | Initial admin password (default: `admin`) |
+
+## Production Deployment (multi-user branch)
+
+1. **Configure DNS** - Point your domain to the server
+
+2. **Create `.env` file:**
+```bash
+cp .env.example .env
+```
+
+3. **Edit `.env` with your settings:**
+```bash
+DOMAIN=connect.example.com
+JWT_SECRET_KEY=your-64-char-hex-secret
+ADMIN_EMAIL=admin@yourcompany.com
+ADMIN_PASSWORD=secure-password-here
+```
+
+4. **Start production:**
+```bash
+./run.sh prod
+```
+
+Caddy automatically provisions Let's Encrypt certificates on first request.
 
 ## License
 
