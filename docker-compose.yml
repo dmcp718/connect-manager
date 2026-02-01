@@ -8,6 +8,10 @@ services:
       - VALKEY_PORT=6379
       - DATA_DIR=/data
       - LL_API_HOST=${LL_API_HOST:-https://dev-admin-api.solutions-eng.online:8443/api/v1}
+      # Authentication - override JWT_SECRET_KEY in production!
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-change-in-production}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
     volumes:
       - app-data:/data
     depends_on:
@@ -16,7 +20,7 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3

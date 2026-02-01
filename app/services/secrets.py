@@ -176,3 +176,26 @@ def delete_named_credentials(key: str) -> bool:
     if not key:
         return False
     return delete_secret(f"aws_creds_{key}")
+
+
+# ============== User-Specific Tokens (for multi-user support) ==============
+
+def set_user_token(user_id: str, token: str) -> None:
+    """Store a LucidLink API token for a specific user."""
+    if not user_id or not token:
+        return
+    set_secret(f"ll_token_{user_id}", token)
+
+
+def get_user_token(user_id: str) -> Optional[str]:
+    """Retrieve a LucidLink API token for a specific user."""
+    if not user_id:
+        return None
+    return get_secret(f"ll_token_{user_id}")
+
+
+def delete_user_token(user_id: str) -> bool:
+    """Delete a LucidLink API token for a specific user."""
+    if not user_id:
+        return False
+    return delete_secret(f"ll_token_{user_id}")

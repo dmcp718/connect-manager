@@ -7,7 +7,9 @@ import os
 import sqlite3
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+from datetime import datetime
 import json
+import uuid
 
 
 # Database location - use DATA_DIR env var or fall back to home directory
@@ -33,6 +35,31 @@ def init_db() -> None:
     """Initialize the database schema."""
     conn = get_connection()
     cursor = conn.cursor()
+
+    # Users table for multi-user support
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            display_name TEXT,
+            is_admin BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP
+        )
+    """)
+
+    # User sessions for JWT tracking and revocation
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            revoked BOOLEAN DEFAULT FALSE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
 
     # Settings table for key-value storage
     cursor.execute("""
@@ -141,8 +168,59 @@ def init_db() -> None:
         )
     """)
 
+    # Migration: Add user_id columns to existing tables if they don't exist
+    _migrate_add_user_id_columns(cursor)
+
     conn.commit()
     conn.close()
+
+
+def _migrate_add_user_id_columns(cursor) -> None:
+    """Add user_id columns to existing tables for multi-user support."""
+    tables_to_migrate = [
+        "profiles",
+        "datastore_credentials",
+        "sqs_credentials",
+        "sqs_queues",
+        "import_jobs",
+    ]
+
+    for table in tables_to_migrate:
+        # Check if user_id column exists
+        cursor.execute(f"PRAGMA table_info({table})")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "user_id" not in columns:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT")
+
+
+def _ensure_default_admin() -> str:
+    """Ensure a default admin user exists, return their ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Check if any users exist
+    cursor.execute("SELECT id FROM users LIMIT 1")
+    existing = cursor.fetchone()
+
+    if existing:
+        conn.close()
+        return existing[0]
+
+    # Create default admin user
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+    admin_id = str(uuid.uuid4())
+    default_password = pwd_context.hash("admin")  # Default password, should be changed
+
+    cursor.execute("""
+        INSERT INTO users (id, email, password_hash, display_name, is_admin)
+        VALUES (?, ?, ?, ?, ?)
+    """, (admin_id, "admin@localhost", default_password, "Admin", True))
+
+    conn.commit()
+    conn.close()
+    return admin_id
 
 
 def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
@@ -755,6 +833,182 @@ def clear_old_sqs_events(days: int = 7) -> int:
         DELETE FROM sqs_events
         WHERE created_at < datetime('now', '-' || ? || ' days')
     """, (days,))
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+# ============== User Management ==============
+
+def create_user(
+    email: str,
+    password_hash: str,
+    display_name: Optional[str] = None,
+    is_admin: bool = False,
+) -> str:
+    """Create a new user and return their ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    user_id = str(uuid.uuid4())
+    cursor.execute("""
+        INSERT INTO users (id, email, password_hash, display_name, is_admin)
+        VALUES (?, ?, ?, ?, ?)
+    """, (user_id, email.lower(), password_hash, display_name or email.split("@")[0], is_admin))
+
+    conn.commit()
+    conn.close()
+    return user_id
+
+
+def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    """Get a user by their ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """Get a user by their email."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE email = ?", (email.lower(),))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_user_last_login(user_id: str) -> None:
+    """Update user's last login timestamp."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+        (user_id,)
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_user_password(user_id: str, password_hash: str) -> bool:
+    """Update a user's password."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (password_hash, user_id)
+    )
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def list_users() -> List[Dict[str, Any]]:
+    """List all users."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, email, display_name, is_admin, created_at, last_login
+        FROM users
+        ORDER BY created_at
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def delete_user(user_id: str) -> bool:
+    """Delete a user."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def count_users() -> int:
+    """Count total number of users."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) as count FROM users")
+    row = cursor.fetchone()
+    conn.close()
+    return row["count"] if row else 0
+
+
+# ============== Session Management ==============
+
+def create_session(user_id: str, session_id: str, expires_at: datetime) -> str:
+    """Create a new session record."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO user_sessions (id, user_id, expires_at)
+        VALUES (?, ?, ?)
+    """, (session_id, user_id, expires_at.isoformat()))
+    conn.commit()
+    conn.close()
+    return session_id
+
+
+def get_session(session_id: str) -> Optional[Dict[str, Any]]:
+    """Get a session by ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT s.*, u.email, u.display_name, u.is_admin
+        FROM user_sessions s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.id = ? AND s.revoked = FALSE
+    """, (session_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def revoke_session(session_id: str) -> bool:
+    """Revoke a session."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE user_sessions SET revoked = TRUE WHERE id = ?",
+        (session_id,)
+    )
+    revoked = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return revoked
+
+
+def revoke_all_user_sessions(user_id: str) -> int:
+    """Revoke all sessions for a user."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE user_sessions SET revoked = TRUE WHERE user_id = ?",
+        (user_id,)
+    )
+    revoked = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return revoked
+
+
+def cleanup_expired_sessions() -> int:
+    """Remove expired sessions."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        DELETE FROM user_sessions
+        WHERE expires_at < datetime('now') OR revoked = TRUE
+    """)
     deleted = cursor.rowcount
     conn.commit()
     conn.close()

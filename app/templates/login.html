@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - CONNECT Manager</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+    <!-- Custom Aeonik font -->
+    <style>
+        @font-face {
+            font-family: 'Aeonik';
+            src: url('/static/fonts/Aeonik-Medium.otf') format('opentype');
+            font-weight: 500;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Aeonik';
+            src: url('/static/fonts/Aeonik-Bold.otf') format('opentype');
+            font-weight: 700;
+            font-style: normal;
+        }
+    </style>
+
+    <!-- Main CSS -->
+    <link rel="stylesheet" href="/static/css/style.css?v=2">
+
+    <!-- Alpine.js cloak -->
+    <style>[x-cloak] { display: none !important; }</style>
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+
+    <!-- Alpine.js -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <style>
+        .login-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--color-charcoal);
+            padding: 1rem;
+        }
+
+        .login-container {
+            background: var(--color-surface);
+            border-radius: 12px;
+            padding: 2.5rem;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .login-header img {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 1rem;
+        }
+
+        .login-header h1 {
+            font-family: 'Aeonik', sans-serif;
+            font-size: 1.5rem;
+            color: var(--color-text);
+            margin: 0 0 0.5rem 0;
+        }
+
+        .login-header p {
+            color: var(--color-text-secondary);
+            font-size: 0.875rem;
+            margin: 0;
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .login-form .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .login-form label {
+            font-size: 0.875rem;
+            color: var(--color-text-secondary);
+        }
+
+        .login-form input {
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            border: 1px solid var(--color-border);
+            background: var(--color-charcoal);
+            color: var(--color-text);
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+
+        .login-form input:focus {
+            outline: none;
+            border-color: var(--color-neon);
+        }
+
+        .login-form input::placeholder {
+            color: var(--color-text-muted);
+        }
+
+        .login-btn {
+            margin-top: 0.5rem;
+            padding: 0.875rem 1.5rem;
+            background: var(--color-neon);
+            color: var(--color-charcoal);
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+
+        .login-btn:hover {
+            opacity: 0.9;
+        }
+
+        .login-btn:active {
+            transform: scale(0.98);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .login-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+        }
+
+        .login-footer {
+            text-align: center;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--color-border);
+        }
+
+        .login-footer p {
+            color: var(--color-text-secondary);
+            font-size: 0.8125rem;
+            margin: 0;
+        }
+
+        .login-footer a {
+            color: var(--color-neon);
+            text-decoration: none;
+        }
+
+        .login-footer a:hover {
+            text-decoration: underline;
+        }
+
+        .login-loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--color-charcoal);
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 0.8s linear infinite;
+            margin-right: 0.5rem;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-page" x-data="{ loading: false, error: '' }">
+        <div class="login-container">
+            <div class="login-header">
+                <img src="/static/img/lab_flask.svg" alt="Lab Flask">
+                <h1>CONNECT Manager</h1>
+                <p>Sign in to continue</p>
+            </div>
+
+            <template x-if="error">
+                <div class="login-error" x-text="error"></div>
+            </template>
+
+            <form class="login-form" @submit.prevent="
+                loading = true;
+                error = '';
+                fetch('/api/auth/login', {
+                    method: 'POST',
+                    body: new FormData($el)
+                })
+                .then(async res => {
+                    const data = await res.json();
+                    if (res.ok) {
+                        window.location.href = '/';
+                    } else {
+                        error = data.detail || 'Login failed';
+                        loading = false;
+                    }
+                })
+                .catch(e => {
+                    error = 'Connection error. Please try again.';
+                    loading = false;
+                });
+            ">
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input
+                        type="email"
+                        id="email"
+                        name="email"
+                        placeholder="you@example.com"
+                        required
+                        autocomplete="email"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        placeholder="Enter your password"
+                        required
+                        autocomplete="current-password"
+                    >
+                </div>
+
+                <button type="submit" class="login-btn" :disabled="loading">
+                    <span x-show="loading" class="login-loading"></span>
+                    <span x-text="loading ? 'Signing in...' : 'Sign in'"></span>
+                </button>
+            </form>
+
+            <div class="login-footer">
+                <p>Default credentials: admin@localhost / admin</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
