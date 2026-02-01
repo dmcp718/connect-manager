@@ -1,0 +1,22 @@
+<!-- Success message in form error container (will trigger closeModal via JS) -->
+<div class="alert alert-success" id="ds-create-success">
+    {{ success }}
+</div>
+
+<!-- Trigger datastore list refresh (out-of-band) -->
+<div id="datastore-list-container" hx-swap-oob="innerHTML">
+{% include "partials/datastore_list.html" %}
+</div>
+
+<script>
+// Close modal after success
+if (typeof closeModal === 'function') {
+    closeModal();
+} else if (window.Alpine) {
+    // Access Alpine data from body
+    const body = document.body;
+    if (body._x_dataStack) {
+        body._x_dataStack[0].closeModal();
+    }
+}
+</script>

@@ -1,144 +1,135 @@
-<div class="modal-backdrop" onclick="this.parentElement.innerHTML = ''">
-    <div class="modal" onclick="event.stopPropagation()" x-data="{ virtualAddressing: true }">
-        <div class="modal-header">
-            <h3 class="modal-title">Create S3 DataStore</h3>
-            <button
-                type="button"
-                class="btn btn-ghost"
-                onclick="document.getElementById('modal-container').innerHTML = ''"
-            >
-                <img src="/static/img/icons/x.svg" alt="Close" class="icon icon-sm icon-muted">
-            </button>
-        </div>
-        <form
-            hx-post="/api/create-datastore"
-            hx-target="#datastore-list-container"
-            hx-swap="innerHTML"
-            hx-on::after-request="if(event.detail.successful) document.getElementById('modal-container').innerHTML = ''"
-        >
-            <div class="modal-body">
-                <div class="form-group">
-                    <label class="form-label" for="ds-name">DataStore name *</label>
-                    <input
-                        type="text"
-                        id="ds-name"
-                        name="name"
-                        class="form-input"
-                        required
-                        placeholder="my-s3-datastore"
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="ds-bucket">Bucket name *</label>
-                    <input
-                        type="text"
-                        id="ds-bucket"
-                        name="bucket"
-                        class="form-input"
-                        required
-                        placeholder="my-bucket"
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="ds-access-key">Access key ID *</label>
-                    <input
-                        type="text"
-                        id="ds-access-key"
-                        name="access_key"
-                        class="form-input"
-                        required
-                        placeholder="AKIAIOSFODNN7EXAMPLE"
-                    >
-                </div>
-
-                <div class="form-group" x-data="{ show: false }">
-                    <label class="form-label" for="ds-secret-key">Secret access key *</label>
-                    <div class="input-password">
-                        <input
-                            :type="show ? 'text' : 'password'"
-                            id="ds-secret-key"
-                            name="secret_key"
-                            class="form-input"
-                            required
-                            placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-                        >
-                        <button type="button" class="btn-eye" @click="show = !show" :title="show ? 'Hide' : 'Show'">
-                            <svg x-show="!show" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                            <svg x-show="show" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: var(--space-sm); cursor: pointer;">
-                        <input
-                            type="checkbox"
-                            id="ds-virtual-addressing"
-                            name="use_virtual_addressing"
-                            value="true"
-                            checked
-                            required
-                            x-model="virtualAddressing"
-                        >
-                        <span class="form-label" style="margin: 0;">Use virtual-hosted style addressing *</span>
-                    </label>
-                    <small class="form-hint">Required. Recommended for AWS S3. Disable for path-style access.</small>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="ds-region">Region *</label>
-                    <input
-                        type="text"
-                        id="ds-region"
-                        name="region"
-                        class="form-input"
-                        value="us-east-1"
-                        placeholder="us-east-1"
-                        required
-                    >
-                    <small class="form-hint">AWS region (e.g., us-east-1, eu-west-1)</small>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="ds-endpoint">Endpoint URL (optional)</label>
-                    <input
-                        type="text"
-                        id="ds-endpoint"
-                        name="endpoint"
-                        class="form-input"
-                        placeholder="https://s3.example.com"
-                    >
-                    <small class="form-hint">For S3-compatible storage (MinIO, Wasabi, etc.). Leave empty for AWS S3.</small>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="ds-url-expiration">URL expiration (minutes)</label>
-                    <input
-                        type="number"
-                        id="ds-url-expiration"
-                        name="url_expiration_minutes"
-                        class="form-input"
-                        value="10080"
-                        min="1"
-                        placeholder="10080 (7 days)"
-                    >
-                    <small class="form-hint">How long pre-signed URLs remain valid</small>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button
-                    type="button"
-                    class="btn btn-secondary"
-                    onclick="document.getElementById('modal-container').innerHTML = ''"
-                >
-                    Cancel
-                </button>
-                <button type="submit" class="btn btn-primary">
-                    Create DataStore
-                </button>
-            </div>
-        </form>
-    </div>
+<div class="modal-header">
+    <h3 class="modal-title">Create S3 DataStore</h3>
+    <button type="button" class="btn btn-ghost" @click="closeModal()">
+        <img src="/static/img/icons/x.svg" alt="Close" class="icon icon-sm icon-muted">
+    </button>
 </div>
+<form
+    hx-post="/api/create-datastore"
+    hx-target="#ds-form-error"
+    hx-swap="innerHTML"
+    @htmx:after-request.camel="if($event.detail.successful && $event.detail.xhr.status === 200 && !$event.detail.xhr.responseText.includes('alert-error')) { closeModal(); htmx.trigger('#datastore-list-container', 'refresh'); }"
+    x-data="{ virtualAddressing: true, showSecret: false }"
+>
+    <div class="modal-body">
+        <!-- Error container -->
+        <div id="ds-form-error"></div>
+
+        <div class="form-group">
+            <label class="form-label" for="ds-name">DataStore name *</label>
+            <input
+                type="text"
+                id="ds-name"
+                name="name"
+                class="form-input"
+                required
+                placeholder="my-s3-datastore"
+            >
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="ds-bucket">Bucket name *</label>
+            <input
+                type="text"
+                id="ds-bucket"
+                name="bucket"
+                class="form-input"
+                required
+                placeholder="my-bucket"
+            >
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="ds-access-key">Access key ID *</label>
+            <input
+                type="text"
+                id="ds-access-key"
+                name="access_key"
+                class="form-input"
+                required
+                placeholder="AKIAIOSFODNN7EXAMPLE"
+            >
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="ds-secret-key">Secret access key *</label>
+            <div class="input-password">
+                <input
+                    :type="showSecret ? 'text' : 'password'"
+                    id="ds-secret-key"
+                    name="secret_key"
+                    class="form-input"
+                    required
+                    placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                >
+                <button type="button" class="btn-eye" @click="showSecret = !showSecret" :title="showSecret ? 'Hide' : 'Show'">
+                    <svg x-show="!showSecret" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    <svg x-show="showSecret" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label style="display: flex; align-items: center; gap: var(--space-sm); cursor: pointer;">
+                <input
+                    type="checkbox"
+                    id="ds-virtual-addressing"
+                    name="use_virtual_addressing"
+                    value="true"
+                    checked
+                    x-model="virtualAddressing"
+                >
+                <span class="form-label" style="margin: 0;">Use virtual-hosted style addressing</span>
+            </label>
+            <small class="form-hint">Recommended for AWS S3. Disable for path-style access.</small>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="ds-region">Region *</label>
+            <input
+                type="text"
+                id="ds-region"
+                name="region"
+                class="form-input"
+                value="us-east-1"
+                placeholder="us-east-1"
+                required
+            >
+            <small class="form-hint">AWS region (e.g., us-east-1, eu-west-1)</small>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="ds-endpoint">Endpoint URL (optional)</label>
+            <input
+                type="text"
+                id="ds-endpoint"
+                name="endpoint"
+                class="form-input"
+                placeholder="https://s3.example.com"
+            >
+            <small class="form-hint">For S3-compatible storage (MinIO, Wasabi, etc.). Leave empty for AWS S3.</small>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="ds-url-expiration">URL expiration (minutes)</label>
+            <input
+                type="number"
+                id="ds-url-expiration"
+                name="url_expiration_minutes"
+                class="form-input"
+                value="10080"
+                min="1"
+                placeholder="10080 (7 days)"
+            >
+            <small class="form-hint">How long pre-signed URLs remain valid</small>
+        </div>
+    </div>
+    <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" @click="closeModal()">
+            Cancel
+        </button>
+        <button type="submit" class="btn btn-primary">
+            Create DataStore
+        </button>
+    </div>
+</form>

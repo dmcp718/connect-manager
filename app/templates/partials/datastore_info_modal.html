@@ -1,75 +1,63 @@
-<div class="modal-backdrop" onclick="this.parentElement.innerHTML = ''">
-    <div class="modal" onclick="event.stopPropagation()">
-        <div class="modal-header">
-            <h3 class="modal-title">DataStore Info</h3>
-            <button
-                type="button"
-                class="btn-close"
-                onclick="document.getElementById('modal-container').innerHTML = ''"
-            >
-                <img src="/static/img/icons/x.svg" alt="Close" class="icon icon-sm icon-muted">
-            </button>
-        </div>
-        <div class="modal-body">
-            {% if error %}
-            <div class="alert alert-error">
-                {{ error }}
-            </div>
-            {% elif datastore %}
-            <div class="info-grid">
-                <div class="info-row">
-                    <span class="info-label">Name</span>
-                    <span class="info-value">{{ datastore.name }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">ID</span>
-                    <span class="info-value info-mono">{{ datastore.id }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Kind</span>
-                    <span class="info-value">{{ datastore.kind }}</span>
-                </div>
-                {% if datastore.bucket %}
-                <div class="info-row">
-                    <span class="info-label">Bucket</span>
-                    <span class="info-value">{{ datastore.bucket }}</span>
-                </div>
-                {% endif %}
-                {% if datastore.region %}
-                <div class="info-row">
-                    <span class="info-label">Region</span>
-                    <span class="info-value">{{ datastore.region }}</span>
-                </div>
-                {% endif %}
-                {% if datastore.endpoint %}
-                <div class="info-row">
-                    <span class="info-label">Endpoint</span>
-                    <span class="info-value info-mono">{{ datastore.endpoint }}</span>
-                </div>
-                {% endif %}
-                <div class="info-row">
-                    <span class="info-label">Virtual addressing</span>
-                    <span class="info-value">{{ 'Yes' if datastore.virtual_addressing else 'No' }}</span>
-                </div>
-                {% if datastore.url_expiration %}
-                <div class="info-row">
-                    <span class="info-label">URL expiration</span>
-                    <span class="info-value">{{ datastore.url_expiration }} min</span>
-                </div>
-                {% endif %}
-            </div>
-            {% else %}
-            <p class="text-muted">No DataStore information available.</p>
-            {% endif %}
-        </div>
-        <div class="modal-footer">
-            <button
-                type="button"
-                class="btn btn-secondary"
-                onclick="document.getElementById('modal-container').innerHTML = ''"
-            >
-                Close
-            </button>
-        </div>
+<div class="modal-header">
+    <h3 class="modal-title">DataStore Info</h3>
+    <button type="button" class="btn btn-ghost" @click="closeModal()">
+        <img src="/static/img/icons/x.svg" alt="Close" class="icon icon-sm icon-muted">
+    </button>
+</div>
+<div class="modal-body">
+    {% if error %}
+    <div class="alert alert-error">
+        {{ error }}
     </div>
+    {% elif datastore %}
+    <div class="info-grid">
+        <div class="info-row">
+            <span class="info-label">Name</span>
+            <span class="info-value">{{ datastore.name }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">ID</span>
+            <span class="info-value info-mono">{{ datastore.id }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Kind</span>
+            <span class="info-value">{{ datastore.kind }}</span>
+        </div>
+        {% if datastore.bucket %}
+        <div class="info-row">
+            <span class="info-label">Bucket</span>
+            <span class="info-value">{{ datastore.bucket }}</span>
+        </div>
+        {% endif %}
+        {% if datastore.region %}
+        <div class="info-row">
+            <span class="info-label">Region</span>
+            <span class="info-value">{{ datastore.region }}</span>
+        </div>
+        {% endif %}
+        {% if datastore.endpoint %}
+        <div class="info-row">
+            <span class="info-label">Endpoint</span>
+            <span class="info-value info-mono">{{ datastore.endpoint }}</span>
+        </div>
+        {% endif %}
+        <div class="info-row">
+            <span class="info-label">Virtual addressing</span>
+            <span class="info-value">{{ 'Yes' if datastore.virtual_addressing else 'No' }}</span>
+        </div>
+        {% if datastore.url_expiration %}
+        <div class="info-row">
+            <span class="info-label">URL expiration</span>
+            <span class="info-value">{{ datastore.url_expiration }} min</span>
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    <p class="text-muted">No DataStore information available.</p>
+    {% endif %}
+</div>
+<div class="modal-footer">
+    <button type="button" class="btn btn-secondary" @click="closeModal()">
+        Close
+    </button>
 </div>

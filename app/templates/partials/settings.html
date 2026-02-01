@@ -12,7 +12,7 @@
                     id="api_host"
                     name="api_host"
                     class="form-input"
-                    value="{{ saved_api_host or 'https://dev-admin-api.solutions-eng.online:8443/api/v1' }}"
+                    value="{{ saved_api_host or '' }}"
                     placeholder="https://api.lucidlink.com/api/v1"
                 >
             </div>
@@ -37,7 +37,7 @@
 
             <button
                 type="button"
-                class="btn btn-secondary"
+                class="btn btn-outline-neon"
                 hx-post="/api/load-filespaces"
                 hx-include="#token, #api_host"
                 hx-target="#filespace-container"

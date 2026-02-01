@@ -27,6 +27,7 @@
     <button
         type="button"
         class="btn btn-indigo"
+        @click="openModal()"
         hx-get="/api/create-datastore-modal"
         hx-target="#modal-container"
         hx-swap="innerHTML"
@@ -43,6 +44,7 @@
     <button
         type="button"
         class="btn btn-indigo"
+        @click="openModal()"
         hx-get="/api/create-datastore-modal"
         hx-target="#modal-container"
         hx-swap="innerHTML"

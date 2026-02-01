@@ -31,6 +31,7 @@
                 type="button"
                 class="btn btn-indigo"
                 style="margin-left: auto;"
+                @click="openModal()"
                 hx-get="/api/create-datastore-modal"
                 hx-target="#modal-container"
                 hx-swap="innerHTML"

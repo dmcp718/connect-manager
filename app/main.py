@@ -108,6 +108,7 @@ async def load_filespaces(
     state.filespaces = {fs.get("name"): fs.get("id") for fs in result}
     state.token = token
     state.api_host = effective_host
+    state.save_connection(save_secrets=True)  # Persist token and API host
     state.log(f"Loaded {len(result)} filespaces")
 
     # Auto-load datastores for the first filespace
@@ -472,6 +473,31 @@ async def create_datastore(
     url_expiration_minutes: Optional[int] = Form(10080),
 ):
     """Create a new S3 datastore in LucidLink and save credentials locally."""
+    # Validate S3 access before creating DataStore
+    try:
+        test_s3 = S3Service(
+            access_key=access_key,
+            secret_key=secret_key,
+            region=region,
+            endpoint_url=endpoint if endpoint else None,
+        )
+        # Test bucket access
+        await test_s3.head_bucket(bucket)
+        state.log(f"S3 access validated for bucket '{bucket}'")
+    except ValueError as e:
+        # head_bucket raises ValueError for access/not found errors
+        state.log(f"S3 validation failed: {e}")
+        return templates.TemplateResponse("partials/create_datastore_error.html", {
+            "request": request,
+            "error": f"S3 access failed: {e}",
+        })
+    except Exception as e:
+        state.log(f"S3 validation error: {e}")
+        return templates.TemplateResponse("partials/create_datastore_error.html", {
+            "request": request,
+            "error": f"Failed to validate S3 access: {e}",
+        })
+
     ll_client = LucidLinkClient()
     filespace_id = state.filespaces[state.selected_filespace]
 
@@ -527,7 +553,8 @@ async def create_datastore(
                 aws_secret_key=secret_key,
             )
 
-        return templates.TemplateResponse("partials/datastore_list.html", {
+        # Return success with out-of-band swap to close modal and update list
+        return templates.TemplateResponse("partials/datastore_create_success.html", {
             "request": request,
             "datastores": datastores_data,
             "success": f"DataStore '{name}' created successfully",

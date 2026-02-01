@@ -1,91 +1,87 @@
-<div class="modal-backdrop" onclick="if(event.target === this) this.remove()">
-    <div class="modal">
-        <div class="modal-header">
-            <h3 class="modal-title">Queue details</h3>
-            <button type="button" class="btn-close" onclick="this.closest('.modal-backdrop').remove()">
-                <img src="/static/img/icons/x.svg" alt="Close" class="icon icon-sm icon-muted">
-            </button>
+<div class="modal-header">
+    <h3 class="modal-title">Queue details</h3>
+    <button type="button" class="btn btn-ghost" @click="closeModal()">
+        <img src="/static/img/icons/x.svg" alt="Close" class="icon icon-sm icon-muted">
+    </button>
+</div>
+<div class="modal-body">
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% else %}
+    <div class="info-grid">
+        <div class="info-row">
+            <span class="info-label">Name</span>
+            <span class="info-value">{{ queue.name }}</span>
         </div>
-        <div class="modal-body">
-            {% if error %}
-            <div class="alert alert-error">{{ error }}</div>
-            {% else %}
-            <div class="info-grid">
-                <div class="info-row">
-                    <span class="info-label">Name</span>
-                    <span class="info-value">{{ queue.name }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Queue URL</span>
-                    <span class="info-value info-mono">{{ queue.queue_url }}</span>
-                </div>
-                {% if queue.queue_arn %}
-                <div class="info-row">
-                    <span class="info-label">ARN</span>
-                    <span class="info-value info-mono">{{ queue.queue_arn }}</span>
-                </div>
-                {% endif %}
-                <div class="info-row">
-                    <span class="info-label">Region</span>
-                    <span class="info-value">{{ queue.region }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Status</span>
-                    <span class="info-value">
-                        <span class="sqs-status-badge {{ queue.status }}">
-                            <span class="sqs-status-dot"></span>
-                            {{ queue.status }}
-                        </span>
-                    </span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">DataStore</span>
-                    <span class="info-value">{{ queue.datastore_name or queue.datastore_id }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Filespace</span>
-                    <span class="info-value">{{ queue.filespace_name or queue.filespace_id }}</span>
-                </div>
-                {% if queue.import_prefix %}
-                <div class="info-row">
-                    <span class="info-label">Import prefix</span>
-                    <span class="info-value info-mono">{{ queue.import_prefix }}</span>
-                </div>
-                {% endif %}
-                <div class="info-row">
-                    <span class="info-label">Created</span>
-                    <span class="info-value">{{ queue.created_at }}</span>
-                </div>
-                {% if queue.last_poll_at %}
-                <div class="info-row">
-                    <span class="info-label">Last poll</span>
-                    <span class="info-value">{{ queue.last_poll_at }}</span>
-                </div>
-                {% endif %}
-                {% if queue.events_today is defined %}
-                <div class="info-row">
-                    <span class="info-label">Events today</span>
-                    <span class="info-value">{{ queue.events_today }}</span>
-                </div>
-                {% endif %}
-                {% if queue.approximate_messages is defined %}
-                <div class="info-row">
-                    <span class="info-label">Messages in queue</span>
-                    <span class="info-value">{{ queue.approximate_messages }}</span>
-                </div>
-                {% endif %}
-            </div>
-            {% if queue.error_message %}
-            <div class="alert alert-error" style="margin-top: var(--space-md);">
-                <strong>Last error:</strong> {{ queue.error_message }}
-            </div>
-            {% endif %}
-            {% endif %}
+        <div class="info-row">
+            <span class="info-label">Queue URL</span>
+            <span class="info-value info-mono">{{ queue.queue_url }}</span>
         </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" onclick="this.closest('.modal-backdrop').remove()">
-                Close
-            </button>
+        {% if queue.queue_arn %}
+        <div class="info-row">
+            <span class="info-label">ARN</span>
+            <span class="info-value info-mono">{{ queue.queue_arn }}</span>
         </div>
+        {% endif %}
+        <div class="info-row">
+            <span class="info-label">Region</span>
+            <span class="info-value">{{ queue.region }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Status</span>
+            <span class="info-value">
+                <span class="sqs-status-badge {{ queue.status }}">
+                    <span class="sqs-status-dot"></span>
+                    {{ queue.status }}
+                </span>
+            </span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">DataStore</span>
+            <span class="info-value">{{ queue.datastore_name or queue.datastore_id }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Filespace</span>
+            <span class="info-value">{{ queue.filespace_name or queue.filespace_id }}</span>
+        </div>
+        {% if queue.import_prefix %}
+        <div class="info-row">
+            <span class="info-label">Import prefix</span>
+            <span class="info-value info-mono">{{ queue.import_prefix }}</span>
+        </div>
+        {% endif %}
+        <div class="info-row">
+            <span class="info-label">Created</span>
+            <span class="info-value">{{ queue.created_at }}</span>
+        </div>
+        {% if queue.last_poll_at %}
+        <div class="info-row">
+            <span class="info-label">Last poll</span>
+            <span class="info-value">{{ queue.last_poll_at }}</span>
+        </div>
+        {% endif %}
+        {% if queue.events_today is defined %}
+        <div class="info-row">
+            <span class="info-label">Events today</span>
+            <span class="info-value">{{ queue.events_today }}</span>
+        </div>
+        {% endif %}
+        {% if queue.approximate_messages is defined %}
+        <div class="info-row">
+            <span class="info-label">Messages in queue</span>
+            <span class="info-value">{{ queue.approximate_messages }}</span>
+        </div>
+        {% endif %}
     </div>
+    {% if queue.error_message %}
+    <div class="alert alert-error" style="margin-top: var(--space-md);">
+        <strong>Last error:</strong> {{ queue.error_message }}
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+<div class="modal-footer">
+    <button type="button" class="btn btn-secondary" @click="closeModal()">
+        Close
+    </button>
 </div>

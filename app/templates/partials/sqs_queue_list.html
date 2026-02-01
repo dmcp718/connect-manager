@@ -4,6 +4,7 @@
         <h3 class="card-title">Configured queues</h3>
         <button
             class="btn btn-primary btn-sm"
+            @click="openModal()"
             hx-get="/api/sqs/queues/add-modal"
             hx-target="#modal-container"
             hx-swap="innerHTML"
@@ -55,6 +56,7 @@
                         {% endif %}
                         <button
                             class="btn btn-ghost btn-sm"
+                            @click="openModal()"
                             hx-get="/api/sqs/queues/{{ queue.id }}/info"
                             hx-target="#modal-container"
                             hx-swap="innerHTML"

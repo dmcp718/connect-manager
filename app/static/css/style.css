@@ -421,6 +421,18 @@ p {
     background-color: var(--color-gray-70);
 }
 
+/* Outline Neon */
+.btn-outline-neon {
+    background-color: var(--color-gray-80);
+    color: var(--color-white);
+    border: 2px solid var(--color-neon);
+}
+
+.btn-outline-neon:hover:not(:disabled) {
+    background-color: var(--color-gray-70);
+    box-shadow: 0 0 8px rgba(176, 251, 21, 0.4);
+}
+
 /* Accent - Orange */
 .btn-accent {
     background-color: var(--color-orange);

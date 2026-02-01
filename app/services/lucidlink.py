@@ -84,7 +84,13 @@ class LucidLinkClient:
                         return data["data"]
                     return [data]
 
-                return f"ERROR_{resp.status_code}"
+                # Include response body in error for debugging
+                error_body = ""
+                try:
+                    error_body = resp.text[:200] if resp.text else ""
+                except Exception:
+                    pass
+                return f"HTTP {resp.status_code}: {error_body}" if error_body else f"HTTP {resp.status_code}"
 
         except httpx.TimeoutException:
             return "TIMEOUT: Connection timed out"
