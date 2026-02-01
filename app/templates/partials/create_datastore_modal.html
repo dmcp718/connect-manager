@@ -1,23 +1,24 @@
 <div class="modal-backdrop" onclick="this.parentElement.innerHTML = ''">
-    <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal" onclick="event.stopPropagation()" x-data="{ virtualAddressing: true }">
         <div class="modal-header">
-            <h3 class="modal-title">Create S3 datastore</h3>
+            <h3 class="modal-title">Create S3 DataStore</h3>
             <button
                 type="button"
                 class="btn btn-ghost"
                 onclick="document.getElementById('modal-container').innerHTML = ''"
             >
-                ✕
+                <img src="/static/img/icons/x.svg" alt="Close" class="icon icon-sm icon-muted">
             </button>
         </div>
         <form
             hx-post="/api/create-datastore"
-            hx-target="#datastore-container"
+            hx-target="#datastore-list-container"
             hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) document.getElementById('modal-container').innerHTML = ''"
         >
             <div class="modal-body">
                 <div class="form-group">
-                    <label class="form-label" for="ds-name">Datastore name</label>
+                    <label class="form-label" for="ds-name">DataStore name *</label>
                     <input
                         type="text"
                         id="ds-name"
@@ -29,7 +30,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label" for="ds-bucket">Bucket name</label>
+                    <label class="form-label" for="ds-bucket">Bucket name *</label>
                     <input
                         type="text"
                         id="ds-bucket"
@@ -41,30 +42,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label" for="ds-region">Region</label>
-                    <input
-                        type="text"
-                        id="ds-region"
-                        name="region"
-                        class="form-input"
-                        value="us-east-1"
-                        placeholder="us-east-1"
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="ds-endpoint">Endpoint (optional)</label>
-                    <input
-                        type="text"
-                        id="ds-endpoint"
-                        name="endpoint"
-                        class="form-input"
-                        placeholder="https://s3.example.com"
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="ds-access-key">Access key ID</label>
+                    <label class="form-label" for="ds-access-key">Access key ID *</label>
                     <input
                         type="text"
                         id="ds-access-key"
@@ -76,7 +54,7 @@
                 </div>
 
                 <div class="form-group" x-data="{ show: false }">
-                    <label class="form-label" for="ds-secret-key">Secret access key</label>
+                    <label class="form-label" for="ds-secret-key">Secret access key *</label>
                     <div class="input-password">
                         <input
                             :type="show ? 'text' : 'password'"
@@ -92,6 +70,62 @@
                         </button>
                     </div>
                 </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: var(--space-sm); cursor: pointer;">
+                        <input
+                            type="checkbox"
+                            id="ds-virtual-addressing"
+                            name="use_virtual_addressing"
+                            value="true"
+                            checked
+                            required
+                            x-model="virtualAddressing"
+                        >
+                        <span class="form-label" style="margin: 0;">Use virtual-hosted style addressing *</span>
+                    </label>
+                    <small class="form-hint">Required. Recommended for AWS S3. Disable for path-style access.</small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="ds-region">Region *</label>
+                    <input
+                        type="text"
+                        id="ds-region"
+                        name="region"
+                        class="form-input"
+                        value="us-east-1"
+                        placeholder="us-east-1"
+                        required
+                    >
+                    <small class="form-hint">AWS region (e.g., us-east-1, eu-west-1)</small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="ds-endpoint">Endpoint URL (optional)</label>
+                    <input
+                        type="text"
+                        id="ds-endpoint"
+                        name="endpoint"
+                        class="form-input"
+                        placeholder="https://s3.example.com"
+                    >
+                    <small class="form-hint">For S3-compatible storage (MinIO, Wasabi, etc.). Leave empty for AWS S3.</small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="ds-url-expiration">URL expiration (minutes)</label>
+                    <input
+                        type="number"
+                        id="ds-url-expiration"
+                        name="url_expiration_minutes"
+                        class="form-input"
+                        value="10080"
+                        min="1"
+                        placeholder="10080 (7 days)"
+                    >
+                    <small class="form-hint">How long pre-signed URLs remain valid</small>
+                </div>
             </div>
             <div class="modal-footer">
                 <button
@@ -102,7 +136,7 @@
                     Cancel
                 </button>
                 <button type="submit" class="btn btn-primary">
-                    Create datastore
+                    Create DataStore
                 </button>
             </div>
         </form>

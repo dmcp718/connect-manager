@@ -1,28 +1,67 @@
-<div class="browser-container">
-    <!-- Browser Header -->
-    <div class="browser-header">
+<div class="browser-container" x-data="{ expandedDatastore: '{{ active_datastore_id or '' }}' }">
+    {% if datastores %}
+    <!-- DataStore accordion view -->
+    <div class="datastore-accordion">
+        {% for ds in datastores %}
+        <div class="datastore-section" x-data="{ loading: false }">
+            <button
+                class="datastore-header"
+                :class="{ 'expanded': expandedDatastore === '{{ ds.datastore_id }}' }"
+                @click="expandedDatastore = expandedDatastore === '{{ ds.datastore_id }}' ? null : '{{ ds.datastore_id }}'"
+            >
+                <div class="datastore-header-info">
+                    <span class="datastore-label">{{ ds.datastore_name }}</span>
+                    <span class="datastore-bucket">
+                        {{ ds.bucket_name }}
+                        {% if ds.endpoint %}
+                        @ {{ ds.endpoint | replace('https://', '') | replace('http://', '') }}
+                        {% elif ds.region %}
+                        ({{ ds.region }})
+                        {% endif %}
+                    </span>
+                </div>
+                <span class="datastore-toggle">
+                    <svg x-show="expandedDatastore !== '{{ ds.datastore_id }}'" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    <svg x-show="expandedDatastore === '{{ ds.datastore_id }}'" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                </span>
+            </button>
+            <div
+                class="datastore-content"
+                x-show="expandedDatastore === '{{ ds.datastore_id }}'"
+                x-transition
+            >
+                <div
+                    id="datastore-browser-{{ ds.datastore_id }}"
+                    hx-get="/api/browse/{{ ds.datastore_id }}"
+                    hx-trigger="intersect once"
+                    hx-swap="innerHTML"
+                >
+                    <div class="loading-placeholder">
+                        <span class="spinner"></span> Loading...
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <!-- No DataStores configured -->
+    <div class="not-connected">
+        <div class="not-connected-icon">
+            <img src="/static/img/icons/folder.svg" alt="" class="icon icon-xl icon-muted">
+        </div>
+        <h3 class="not-connected-title">No DataStores configured</h3>
+        <p class="not-connected-text">
+            Go to the Settings tab to connect to a LucidLink filespace and create or select a DataStore for browsing.
+        </p>
         <button
-            class="btn btn-ghost"
-            hx-get="/api/browse/back"
-            hx-target="#browser-contents"
-            hx-swap="innerHTML"
-            {% if not prefix %}disabled{% endif %}
-        >
-            ← Back
-        </button>
-        <span class="browser-path">s3://{{ bucket }}/{{ prefix }}</span>
-        <button
-            class="btn btn-ghost"
-            hx-get="/api/browse?prefix={{ prefix }}"
-            hx-target="#browser-contents"
+            class="btn btn-primary"
+            hx-get="/api/tab/settings"
+            hx-target="#tab-content"
             hx-swap="innerHTML"
         >
-            ↻ Refresh
+            Go to Settings
         </button>
     </div>
-
-    <!-- Browser Contents -->
-    <div id="browser-contents" class="browser-contents">
-        {% include "partials/browser_contents.html" %}
-    </div>
+    {% endif %}
 </div>

@@ -117,6 +117,59 @@ class LucidLinkClient:
 
         return []
 
+    async def get_datastore(self, token: str, filespace_id: str, datastore_id: str, api_host: str = "") -> Union[Dict, str]:
+        """Get DataStore details."""
+        host = api_host or self.api_host
+        url = f"{host}/filespaces/{filespace_id}/external/data-stores/{datastore_id}"
+        headers = {
+            "Authorization": f"Bearer {self._clean_token(token)}",
+            "accept": "application/json",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers)
+
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # Handle wrapped response
+                    if isinstance(data, dict) and "data" in data:
+                        return data["data"]
+                    return data
+
+                return f"ERROR_{resp.status_code}: {resp.text}"
+
+        except httpx.TimeoutException:
+            return "TIMEOUT: Connection timed out"
+        except httpx.ConnectError:
+            return "CONN_ERR: Cannot connect to LucidLink API"
+        except Exception as e:
+            return f"CONN_ERR: {e}"
+
+    async def delete_datastore(self, token: str, filespace_id: str, datastore_id: str, api_host: str = "") -> str:
+        """Delete a DataStore. Returns 'SUCCESS' or error message."""
+        host = api_host or self.api_host
+        url = f"{host}/filespaces/{filespace_id}/external/data-stores/{datastore_id}"
+        headers = {
+            "Authorization": f"Bearer {self._clean_token(token)}",
+            "accept": "application/json",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.delete(url, headers=headers)
+
+                if resp.status_code in [200, 204]:
+                    return "SUCCESS"
+                return f"Error {resp.status_code}: {resp.text}"
+
+        except httpx.TimeoutException:
+            return "TIMEOUT: Connection timed out"
+        except httpx.ConnectError:
+            return "CONN_ERR: Cannot connect to LucidLink API"
+        except Exception as e:
+            return f"Exception: {e}"
+
     async def create_s3_datastore(
         self,
         token: str,
@@ -128,6 +181,8 @@ class LucidLinkClient:
         access_key: str,
         secret_key: str,
         api_host: str = "",
+        use_virtual_addressing: bool = True,
+        url_expiration_minutes: int = 10080,
     ) -> str:
         """Create a new S3 datastore."""
         host = api_host or self.api_host
@@ -137,19 +192,23 @@ class LucidLinkClient:
             "Content-Type": "application/json",
         }
 
-        payload = {
+        payload: Dict[str, Any] = {
             "name": name,
             "kind": "S3DataStore",
             "s3StorageParams": {
                 "bucketName": bucket,
                 "accessKey": access_key,
                 "secretKey": secret_key,
-                "region": region,
-                "useVirtualAddressing": True,
-                "urlExpirationMinutes": 10080,
+                "useVirtualAddressing": use_virtual_addressing,
+                "urlExpirationMinutes": url_expiration_minutes,
             },
         }
 
+        # Add region if provided
+        if region:
+            payload["s3StorageParams"]["region"] = region
+
+        # Add endpoint if provided
         if endpoint:
             payload["s3StorageParams"]["endpoint"] = endpoint
 

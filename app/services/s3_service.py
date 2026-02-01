@@ -29,20 +29,35 @@ class S3Service:
         access_key: Optional[str] = None,
         secret_key: Optional[str] = None,
         region: str = "us-east-1",
+        endpoint_url: Optional[str] = None,
     ):
-        """Initialize S3 client."""
+        """Initialize S3 client.
+
+        Args:
+            access_key: AWS access key ID
+            secret_key: AWS secret access key
+            region: AWS region (default us-east-1)
+            endpoint_url: Custom S3 endpoint URL (e.g., MinIO, Backblaze B2)
+        """
         self._executor = ThreadPoolExecutor(max_workers=4)
+        self.endpoint_url = endpoint_url
+        self.region = region
+
+        client_kwargs = {
+            "region_name": region,
+        }
+
+        # Add endpoint URL for custom S3-compatible services
+        if endpoint_url:
+            client_kwargs["endpoint_url"] = endpoint_url
 
         if access_key and secret_key:
-            self.client = boto3.client(
-                "s3",
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-                region_name=region,
-            )
+            client_kwargs["aws_access_key_id"] = access_key
+            client_kwargs["aws_secret_access_key"] = secret_key
+            self.client = boto3.client("s3", **client_kwargs)
         else:
             # Use default credentials (environment, ~/.aws/credentials, IAM role)
-            self.client = boto3.client("s3", region_name=region)
+            self.client = boto3.client("s3", **client_kwargs)
 
     async def _run_sync(self, func, *args, **kwargs):
         """Run a synchronous boto3 call in a thread pool."""
@@ -63,6 +78,17 @@ class S3Service:
             elif error_code == "403":
                 raise ValueError(f"Access denied to bucket '{bucket}'")
             raise ValueError(f"Error accessing bucket: {e}")
+
+    async def list_buckets(self) -> List[str]:
+        """List all accessible buckets for the current credentials."""
+        try:
+            response = await self._run_sync(self.client.list_buckets)
+            return [b["Name"] for b in response.get("Buckets", [])]
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code == "403":
+                raise ValueError("Access denied - check your credentials")
+            raise ValueError(f"Error listing buckets: {e}")
 
     async def list_objects(self, bucket: str, prefix: str = "") -> List[S3Item]:
         """List objects in a bucket with a given prefix."""

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LucidLink Labs</title>
+    <title>LucidLink Labs: CONNECT Manager</title>
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -41,7 +41,7 @@
     <header class="header">
         <div class="header-left">
             <img src="/static/img/lab_flask.svg" alt="Lab Flask" class="header-icon">
-            <h1 class="header-title">LucidLink Labs</h1>
+            <h1 class="header-title">LucidLink Labs: CONNECT Manager</h1>
         </div>
     </header>
 
@@ -97,14 +97,6 @@
             <div id="tab-content" class="tab-content">
                 {% block content %}{% endblock %}
             </div>
-
-            <!-- Progress Bar -->
-            <div class="progress-container">
-                <span class="progress-label">Progress:</span>
-                <div class="progress-bar" id="progress-bar">
-                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
-                </div>
-            </div>
         </main>
     </div>
 
@@ -116,16 +108,6 @@
 
     <!-- SSE Listeners -->
     <script>
-        // Progress SSE
-        const progressSource = new EventSource('/api/progress/stream');
-        progressSource.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            if (data.type === 'progress') {
-                const percent = Math.round(data.value * 100);
-                document.getElementById('progress-fill').style.width = percent + '%';
-            }
-        };
-
         // Track how many logs the server has rendered (synced on tab load)
         window.serverLogCount = 0;
 

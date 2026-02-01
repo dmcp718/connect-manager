@@ -6,7 +6,7 @@ Stores non-sensitive configuration data
 import os
 import sqlite3
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import json
 
 
@@ -43,7 +43,7 @@ def init_db() -> None:
         )
     """)
 
-    # Connection profiles for quick switching
+    # Connection profiles for quick switching (kept for backwards compatibility)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS profiles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,6 +55,22 @@ def init_db() -> None:
             datastore_id TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # DataStore credentials - stores S3 credentials for browsing DataStores
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS datastore_credentials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            datastore_id TEXT UNIQUE NOT NULL,
+            datastore_name TEXT NOT NULL,
+            filespace_id TEXT NOT NULL,
+            filespace_name TEXT NOT NULL,
+            bucket_name TEXT NOT NULL,
+            region TEXT,
+            endpoint TEXT,
+            credentials_key TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -184,6 +200,85 @@ def delete_profile(name: str) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM profiles WHERE name = ?", (name,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+# ============== DataStore Credentials ==============
+
+def save_datastore_credentials(
+    datastore_id: str,
+    datastore_name: str,
+    filespace_id: str,
+    filespace_name: str,
+    bucket_name: str,
+    region: Optional[str],
+    endpoint: Optional[str],
+    credentials_key: str,
+) -> int:
+    """Save credentials for a DataStore (for S3 browsing)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO datastore_credentials (
+            datastore_id, datastore_name, filespace_id, filespace_name,
+            bucket_name, region, endpoint, credentials_key
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(datastore_id) DO UPDATE SET
+            datastore_name = excluded.datastore_name,
+            filespace_id = excluded.filespace_id,
+            filespace_name = excluded.filespace_name,
+            bucket_name = excluded.bucket_name,
+            region = excluded.region,
+            endpoint = excluded.endpoint,
+            credentials_key = excluded.credentials_key
+    """, (
+        datastore_id, datastore_name, filespace_id, filespace_name,
+        bucket_name, region, endpoint, credentials_key
+    ))
+    conn.commit()
+    row_id = cursor.lastrowid
+    conn.close()
+    return row_id
+
+
+def get_datastore_credentials(datastore_id: str) -> Optional[Dict[str, Any]]:
+    """Get credentials for a specific DataStore."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM datastore_credentials WHERE datastore_id = ?",
+        (datastore_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_all_datastore_credentials() -> List[Dict[str, Any]]:
+    """Get all stored DataStore credentials."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM datastore_credentials
+        ORDER BY datastore_name
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def delete_datastore_credentials(datastore_id: str) -> bool:
+    """Delete credentials for a DataStore."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM datastore_credentials WHERE datastore_id = ?",
+        (datastore_id,)
+    )
     deleted = cursor.rowcount > 0
     conn.commit()
     conn.close()

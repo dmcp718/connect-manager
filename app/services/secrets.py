@@ -6,8 +6,9 @@ Secure Secret Storage
 
 import json
 import os
+import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 # Check if running in container mode (DATA_DIR set)
 _data_dir = os.getenv("DATA_DIR")
@@ -136,3 +137,42 @@ def clear_all_secrets() -> None:
     """Clear all stored secrets."""
     delete_lucidlink_token()
     delete_aws_credentials()
+
+
+# ============== Named Credentials (for multi-config support) ==============
+
+def generate_credentials_key() -> str:
+    """Generate a unique key for storing credentials."""
+    return uuid.uuid4().hex[:8]
+
+
+def set_named_credentials(key: str, access_key: str, secret_key: str) -> None:
+    """Store AWS credentials with a unique key."""
+    if not key or not access_key or not secret_key:
+        return
+    cred_data = json.dumps({
+        "access_key": access_key,
+        "secret_key": secret_key,
+    })
+    set_secret(f"aws_creds_{key}", cred_data)
+
+
+def get_named_credentials(key: str) -> Tuple[Optional[str], Optional[str]]:
+    """Retrieve AWS credentials by key."""
+    if not key:
+        return None, None
+    try:
+        cred_data = get_secret(f"aws_creds_{key}")
+        if cred_data:
+            data = json.loads(cred_data)
+            return data.get("access_key"), data.get("secret_key")
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return None, None
+
+
+def delete_named_credentials(key: str) -> bool:
+    """Delete AWS credentials by key."""
+    if not key:
+        return False
+    return delete_secret(f"aws_creds_{key}")

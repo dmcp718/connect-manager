@@ -1,0 +1,89 @@
+<!-- Browser for a specific DataStore -->
+<div class="datastore-browser">
+    <!-- Browser Header -->
+    <div class="browser-header">
+        {% if prefix %}
+        <button
+            class="btn btn-ghost"
+            hx-get="/api/browse/{{ datastore_id }}/back?prefix={{ prefix }}"
+            hx-target="#datastore-browser-{{ datastore_id }}"
+            hx-swap="innerHTML"
+        >
+            <img src="/static/img/icons/arrow-left.svg" alt="" class="icon icon-sm icon-white"> Back
+        </button>
+        {% else %}
+        <button class="btn btn-ghost" disabled>
+            <img src="/static/img/icons/arrow-left.svg" alt="" class="icon icon-sm icon-muted"> Back
+        </button>
+        {% endif %}
+        <span class="browser-path">
+            s3://{{ bucket }}/{{ prefix }}
+        </span>
+        <button
+            class="btn btn-ghost"
+            hx-get="/api/browse/{{ datastore_id }}?prefix={{ prefix }}"
+            hx-target="#datastore-browser-{{ datastore_id }}"
+            hx-swap="innerHTML"
+        >
+            <img src="/static/img/icons/refresh.svg" alt="" class="icon icon-sm icon-white"> Refresh
+        </button>
+    </div>
+
+    <!-- Browser Contents -->
+    <div class="browser-list">
+        {% if items %}
+        <!-- Objects list -->
+        {% for item in items %}
+        <div class="browser-item">
+            <div class="browser-item-info">
+                {% if item.is_folder %}
+                <span class="browser-icon folder">
+                    <img src="/static/img/icons/folder.svg" alt="" class="icon icon-neon">
+                </span>
+                <button
+                    class="browser-name btn-link"
+                    hx-get="/api/browse/{{ datastore_id }}?prefix={{ item.key }}"
+                    hx-target="#datastore-browser-{{ datastore_id }}"
+                    hx-swap="innerHTML"
+                >
+                    {{ item.name }}/
+                </button>
+                {% else %}
+                <span class="browser-icon file">
+                    <img src="/static/img/icons/file.svg" alt="" class="icon icon-muted">
+                </span>
+                <span class="browser-name">{{ item.name }}</span>
+                <span class="browser-size">{{ item.size_formatted }}</span>
+                {% endif %}
+            </div>
+            <div class="browser-item-actions">
+                {% if item.is_folder %}
+                <button
+                    class="btn btn-success btn-sm"
+                    hx-post="/api/import/folder"
+                    hx-vals='{"datastore_id": "{{ datastore_id }}", "prefix": "{{ item.key }}"}'
+                    hx-target="#toast-container"
+                    hx-swap="innerHTML"
+                >
+                    + Queue
+                </button>
+                {% else %}
+                <button
+                    class="btn btn-primary btn-sm"
+                    hx-post="/api/import/file"
+                    hx-vals='{"datastore_id": "{{ datastore_id }}", "key": "{{ item.key }}"}'
+                    hx-swap="none"
+                >
+                    Import
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="browser-empty">
+            <p>This folder is empty</p>
+        </div>
+        {% endif %}
+    </div>
+</div>

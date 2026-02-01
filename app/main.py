@@ -1,6 +1,7 @@
 """
-LucidLink Labs - S3 to LucidLink Integrator
+LucidLink Labs: CONNECT Manager - S3 to LucidLink Integrator
 FastAPI + HTMX Web Application
+DataStore-centric architecture
 """
 
 import asyncio
@@ -17,6 +18,7 @@ from services.lucidlink import LucidLinkClient
 from services.s3_service import S3Service
 from services.state import AppState
 from services.job_queue import job_queue
+from services import database as db
 
 # Application state
 state = AppState()
@@ -36,8 +38,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="LucidLink Labs",
-    description="S3 to LucidLink Integrator",
+    title="LucidLink Labs: CONNECT Manager",
+    description="S3 to LucidLink Integrator - DataStore-centric",
     lifespan=lifespan
 )
 
@@ -53,22 +55,28 @@ templates = Jinja2Templates(directory="templates")
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Main page."""
-    # Get saved AWS credentials
-    aws_key, aws_secret = state.get_saved_aws_credentials()
+    browsable_datastores = state.get_browsable_datastores()
+
+    # Build datastores data for list view
+    datastores_data = []
+    for name, ds in state.datastores.items():
+        s3_params = ds.get("s3StorageParams", {})
+        datastores_data.append({
+            "id": ds.get("id"),
+            "name": name,
+            "bucket": s3_params.get("bucketName", ""),
+        })
 
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "connected": state.is_connected,
-        "current_bucket": state.current_bucket,
-        "current_prefix": state.current_prefix,
+        "connected": len(browsable_datastores) > 0,
         "filespaces": list(state.filespaces.keys()) if state.filespaces else [],
-        "datastores": list(state.datastores.keys()) if state.datastores else [],
+        "datastores": datastores_data,
         "selected_filespace": state.selected_filespace,
         "selected_datastore": state.selected_datastore,
         "saved_token": state.token,
         "saved_api_host": state.api_host,
-        "saved_aws_key": aws_key or "",
-        "has_saved_aws_secret": bool(aws_secret),
+        "browsable_datastores": browsable_datastores,
     })
 
 
@@ -80,7 +88,7 @@ async def load_filespaces(
     token: str = Form(...),
     api_host: Optional[str] = Form(None),
 ):
-    """Load filespaces from LucidLink API."""
+    """Load filespaces from LucidLink API and auto-load datastores for first filespace."""
     # Use provided api_host or fall back to saved/default
     effective_host = api_host.strip() if api_host else state.api_host
 
@@ -89,116 +97,359 @@ async def load_filespaces(
 
     if isinstance(result, str):
         # Error occurred
-        state.log(f"❌ Error loading filespaces: {result}")
+        state.log(f"Error loading filespaces: {result}")
         return templates.TemplateResponse("partials/filespace_select.html", {
             "request": request,
             "error": result,
             "filespaces": [],
+            "datastores": [],
         })
 
     state.filespaces = {fs.get("name"): fs.get("id") for fs in result}
     state.token = token
     state.api_host = effective_host
-    state.log(f"✅ Loaded {len(result)} filespaces")
+    state.log(f"Loaded {len(result)} filespaces")
+
+    # Auto-load datastores for the first filespace
+    datastores_data = []
+    selected_filespace = None
+    if state.filespaces:
+        selected_filespace = list(state.filespaces.keys())[0]
+        filespace_id = state.filespaces[selected_filespace]
+        ds_result = await ll_client.list_datastores(token, filespace_id, api_host=effective_host)
+
+        state.datastores = {}
+        for ds in ds_result:
+            ds_id = ds.get("id")
+            ds_name = ds.get("name", ds_id)
+            state.datastores[ds_name] = ds
+            # Extract bucket info for display
+            s3_params = ds.get("s3StorageParams", {})
+            datastores_data.append({
+                "id": ds_id,
+                "name": ds_name,
+                "bucket": s3_params.get("bucketName", ""),
+            })
+
+        state.selected_filespace = selected_filespace
+        state.log(f"Loaded {len(ds_result)} datastores for {selected_filespace}")
 
     return templates.TemplateResponse("partials/filespace_select.html", {
         "request": request,
         "filespaces": list(state.filespaces.keys()),
-        "selected": list(state.filespaces.keys())[0] if state.filespaces else None,
+        "selected": selected_filespace,
+        "datastores": datastores_data,
     })
 
 
 @app.post("/api/load-datastores", response_class=HTMLResponse)
 async def load_datastores(request: Request, filespace: str = Form(...)):
-    """Load datastores for selected filespace."""
+    """Load datastores for selected filespace - returns list view."""
     if filespace not in state.filespaces:
-        return templates.TemplateResponse("partials/datastore_select.html", {
+        return templates.TemplateResponse("partials/datastore_list.html", {
             "request": request,
             "datastores": [],
             "error": "Invalid filespace",
         })
 
-    ll_client = LucidLinkClient()
+    ll_client = LucidLinkClient(api_host=state.api_host)
     filespace_id = state.filespaces[filespace]
-    result = await ll_client.list_datastores(state.token, filespace_id)
+    result = await ll_client.list_datastores(state.token, filespace_id, api_host=state.api_host)
 
-    state.datastores = {ds.get("name", ds.get("id")): ds.get("id") for ds in result}
+    # Store full DataStore info including bucket details
+    state.datastores = {}
+    datastores_data = []
+    for ds in result:
+        ds_id = ds.get("id")
+        ds_name = ds.get("name", ds_id)
+        state.datastores[ds_name] = ds  # Store full object
+        # Extract bucket info for display
+        s3_params = ds.get("s3StorageParams", {})
+        datastores_data.append({
+            "id": ds_id,
+            "name": ds_name,
+            "bucket": s3_params.get("bucketName", ""),
+        })
+
     state.selected_filespace = filespace
+    state.log(f"Loaded {len(result)} datastores for {filespace}")
 
-    return templates.TemplateResponse("partials/datastore_select.html", {
+    return templates.TemplateResponse("partials/datastore_list.html", {
         "request": request,
-        "datastores": list(state.datastores.keys()),
-        "selected": list(state.datastores.keys())[0] if state.datastores else None,
+        "datastores": datastores_data,
     })
 
 
 @app.post("/api/connect", response_class=HTMLResponse)
 async def connect(
     request: Request,
-    bucket: str = Form(...),
-    aws_key: Optional[str] = Form(None),
-    aws_secret: Optional[str] = Form(None),
     datastore: str = Form(...),
 ):
-    """Connect to S3 and LucidLink."""
+    """Connect to a DataStore - show credentials modal if needed."""
     try:
-        # Use saved AWS credentials if not provided
-        effective_aws_key = aws_key if aws_key else None
-        effective_aws_secret = aws_secret if aws_secret else None
+        # Get DataStore info
+        ds_info = state.datastores.get(datastore)
+        if not ds_info:
+            raise ValueError(f"DataStore '{datastore}' not found")
 
-        if not effective_aws_key or not effective_aws_secret:
-            saved_key, saved_secret = state.get_saved_aws_credentials()
-            if saved_key and saved_secret:
-                effective_aws_key = effective_aws_key or saved_key
-                effective_aws_secret = effective_aws_secret or saved_secret
+        datastore_id = ds_info.get("id")
+        filespace_id = state.filespaces.get(state.selected_filespace, "")
 
-        # Initialize S3 service
-        state.s3_service = S3Service(
-            access_key=effective_aws_key,
-            secret_key=effective_aws_secret,
-        )
+        if not filespace_id:
+            raise ValueError("Please select a filespace first")
 
-        # Verify bucket access
-        await state.s3_service.head_bucket(bucket)
-        state.current_bucket = bucket
+        # Check if we already have credentials for this DataStore
+        existing_creds = db.get_datastore_credentials(datastore_id)
+        if existing_creds:
+            # Already have credentials - go directly to browser
+            state.selected_datastore = datastore
+            state.save_connection(save_secrets=True)
+            state.log(f"Connected to DataStore: {datastore}")
 
-        # Configure LucidLink client
-        state.ll_client = LucidLinkClient(api_host=state.api_host)
-        state.ll_client.configure(
-            token=state.token,
-            filespace_id=state.filespaces[state.selected_filespace],
-            datastore_id=state.datastores[datastore],
-            api_host=state.api_host,
-        )
-        state.selected_datastore = datastore
-        state.is_connected = True
-        state.current_prefix = ""
+            return templates.TemplateResponse("partials/browser.html", {
+                "request": request,
+                "datastores": state.get_browsable_datastores(),
+                "active_datastore_id": datastore_id,
+            })
 
-        # Save connection state and secrets
-        state.save_connection(save_secrets=True)
-        if effective_aws_key and effective_aws_secret:
-            state.save_aws_credentials(effective_aws_key, effective_aws_secret)
+        # Need credentials - show modal
+        # Extract bucket info from DataStore if available
+        s3_params = ds_info.get("s3StorageParams", {})
+        bucket_name = s3_params.get("bucketName", "")
+        region = s3_params.get("region", "")
+        endpoint = s3_params.get("endpoint", "")
 
-        state.log("✅ Connected successfully")
-
-        # Return browser view
-        return templates.TemplateResponse("partials/browser.html", {
+        return templates.TemplateResponse("partials/datastore_credentials_modal.html", {
             "request": request,
-            "connected": True,
-            "bucket": bucket,
-            "prefix": "",
-            "items": await state.s3_service.list_objects(bucket, ""),
+            "datastore_id": datastore_id,
+            "datastore_name": datastore,
+            "filespace_id": filespace_id,
+            "filespace_name": state.selected_filespace,
+            "bucket_name": bucket_name,
+            "region": region,
+            "endpoint": endpoint,
         })
 
     except Exception as e:
-        state.log(f"❌ Connection error: {e}")
+        state.log(f"Connection error: {e}")
         return templates.TemplateResponse("partials/connection_error.html", {
             "request": request,
             "error": str(e),
         })
 
 
-# ============== Create Datastore ==============
+# ============== DataStore Credentials API ==============
+
+@app.get("/api/datastores/{datastore_id}/credentials-modal", response_class=HTMLResponse)
+async def datastore_credentials_modal(request: Request, datastore_id: str):
+    """Return the credentials prompt modal for a DataStore."""
+    # Find the DataStore info
+    ds_info = None
+    ds_name = ""
+    for name, info in state.datastores.items():
+        if info.get("id") == datastore_id:
+            ds_info = info
+            ds_name = name
+            break
+
+    if not ds_info:
+        return templates.TemplateResponse("partials/connection_error.html", {
+            "request": request,
+            "error": f"DataStore {datastore_id} not found",
+        })
+
+    s3_params = ds_info.get("s3StorageParams", {})
+
+    return templates.TemplateResponse("partials/datastore_credentials_modal.html", {
+        "request": request,
+        "datastore_id": datastore_id,
+        "datastore_name": ds_name,
+        "filespace_id": state.filespaces.get(state.selected_filespace, ""),
+        "filespace_name": state.selected_filespace,
+        "bucket_name": s3_params.get("bucketName", ""),
+        "region": s3_params.get("region", ""),
+        "endpoint": s3_params.get("endpoint", ""),
+    })
+
+
+@app.post("/api/datastores/{datastore_id}/credentials", response_class=HTMLResponse)
+async def save_datastore_credentials(
+    request: Request,
+    datastore_id: str,
+    datastore_name: str = Form(...),
+    filespace_id: str = Form(...),
+    filespace_name: str = Form(...),
+    bucket_name: str = Form(...),
+    access_key: str = Form(...),
+    secret_key: str = Form(...),
+    region: Optional[str] = Form(None),
+    endpoint: Optional[str] = Form(None),
+):
+    """Save credentials for a DataStore."""
+    try:
+        # Validate credentials by testing S3 connection
+        s3_service = S3Service(
+            access_key=access_key,
+            secret_key=secret_key,
+            region=region or "us-east-1",
+            endpoint_url=endpoint if endpoint else None,
+        )
+
+        # Try to access the bucket
+        await s3_service.head_bucket(bucket_name)
+
+        # Save credentials
+        state.save_datastore_for_browsing(
+            datastore_id=datastore_id,
+            datastore_name=datastore_name,
+            filespace_id=filespace_id,
+            filespace_name=filespace_name,
+            bucket_name=bucket_name,
+            region=region,
+            endpoint=endpoint,
+            aws_access_key=access_key,
+            aws_secret_key=secret_key,
+        )
+
+        state.selected_datastore = datastore_name
+        state.save_connection(save_secrets=True)
+
+        # Return browser view
+        return templates.TemplateResponse("partials/browser.html", {
+            "request": request,
+            "datastores": state.get_browsable_datastores(),
+            "active_datastore_id": datastore_id,
+        })
+
+    except Exception as e:
+        state.log(f"Failed to save credentials: {e}")
+        return templates.TemplateResponse("partials/connection_error.html", {
+            "request": request,
+            "error": f"Failed to connect to S3: {e}",
+        })
+
+
+@app.delete("/api/datastores/{datastore_id}/credentials", response_class=HTMLResponse)
+async def delete_datastore_credentials(request: Request, datastore_id: str):
+    """Remove credentials for a DataStore."""
+    state.remove_datastore_credentials(datastore_id)
+    return await tab_settings(request)
+
+
+# ============== DataStore Management API ==============
+
+@app.get("/api/datastores/{datastore_id}/info", response_class=HTMLResponse)
+async def datastore_info(request: Request, datastore_id: str):
+    """Get DataStore info and show in modal."""
+    # Find filespace_id for this datastore
+    filespace_id = None
+    ds_name = None
+    for name, info in state.datastores.items():
+        if info.get("id") == datastore_id:
+            ds_name = name
+            filespace_id = state.filespaces.get(state.selected_filespace)
+            break
+
+    if not filespace_id:
+        return templates.TemplateResponse("partials/datastore_info_modal.html", {
+            "request": request,
+            "error": "DataStore or filespace not found",
+        })
+
+    ll_client = LucidLinkClient(api_host=state.api_host)
+    result = await ll_client.get_datastore(state.token, filespace_id, datastore_id, api_host=state.api_host)
+
+    if isinstance(result, str):
+        # Error occurred
+        return templates.TemplateResponse("partials/datastore_info_modal.html", {
+            "request": request,
+            "error": result,
+        })
+
+    # Extract display data
+    s3_params = result.get("s3StorageParams", {})
+
+    return templates.TemplateResponse("partials/datastore_info_modal.html", {
+        "request": request,
+        "datastore": {
+            "name": result.get("name", ds_name),
+            "id": result.get("id", datastore_id),
+            "kind": result.get("kind", "Unknown"),
+            "bucket": s3_params.get("bucketName", ""),
+            "region": s3_params.get("region", ""),
+            "endpoint": s3_params.get("endpoint", ""),
+            "virtual_addressing": s3_params.get("useVirtualAddressing", False),
+            "url_expiration": s3_params.get("urlExpirationMinutes", ""),
+        },
+    })
+
+
+@app.delete("/api/datastores/{datastore_id}", response_class=HTMLResponse)
+async def delete_datastore(request: Request, datastore_id: str):
+    """Delete DataStore from LucidLink."""
+    # Find filespace_id for this datastore
+    filespace_id = None
+    ds_name = None
+    for name, info in state.datastores.items():
+        if info.get("id") == datastore_id:
+            ds_name = name
+            filespace_id = state.filespaces.get(state.selected_filespace)
+            break
+
+    if not filespace_id:
+        return templates.TemplateResponse("partials/datastore_list.html", {
+            "request": request,
+            "datastores": [],
+            "error": "DataStore or filespace not found",
+        })
+
+    ll_client = LucidLinkClient(api_host=state.api_host)
+    result = await ll_client.delete_datastore(state.token, filespace_id, datastore_id, api_host=state.api_host)
+
+    if result != "SUCCESS":
+        state.log(f"Error deleting DataStore: {result}")
+        # Return current list with error
+        datastores_data = []
+        for name, ds in state.datastores.items():
+            s3_params = ds.get("s3StorageParams", {})
+            datastores_data.append({
+                "id": ds.get("id"),
+                "name": name,
+                "bucket": s3_params.get("bucketName", ""),
+            })
+        return templates.TemplateResponse("partials/datastore_list.html", {
+            "request": request,
+            "datastores": datastores_data,
+            "error": result,
+        })
+
+    state.log(f"Deleted DataStore: {ds_name}")
+
+    # Remove from local state
+    if ds_name in state.datastores:
+        del state.datastores[ds_name]
+
+    # Also remove any saved credentials for this datastore
+    state.remove_datastore_credentials(datastore_id)
+
+    # Return updated list
+    datastores_data = []
+    for name, ds in state.datastores.items():
+        s3_params = ds.get("s3StorageParams", {})
+        datastores_data.append({
+            "id": ds.get("id"),
+            "name": name,
+            "bucket": s3_params.get("bucketName", ""),
+        })
+
+    return templates.TemplateResponse("partials/datastore_list.html", {
+        "request": request,
+        "datastores": datastores_data,
+        "success": f"DataStore '{ds_name}' deleted",
+    })
+
+
+# ============== Create DataStore ==============
 
 @app.get("/api/create-datastore-modal", response_class=HTMLResponse)
 async def create_datastore_modal(request: Request):
@@ -213,14 +464,19 @@ async def create_datastore(
     request: Request,
     name: str = Form(...),
     bucket: str = Form(...),
-    region: str = Form("us-east-1"),
-    endpoint: Optional[str] = Form(None),
     access_key: str = Form(...),
     secret_key: str = Form(...),
+    region: str = Form(...),
+    endpoint: Optional[str] = Form(None),
+    use_virtual_addressing: Optional[str] = Form(None),
+    url_expiration_minutes: Optional[int] = Form(10080),
 ):
-    """Create a new S3 datastore in LucidLink."""
+    """Create a new S3 datastore in LucidLink and save credentials locally."""
     ll_client = LucidLinkClient()
     filespace_id = state.filespaces[state.selected_filespace]
+
+    # Determine virtual addressing
+    virtual_addr = use_virtual_addressing == "true" if use_virtual_addressing else True
 
     result = await ll_client.create_s3_datastore(
         token=state.token,
@@ -231,22 +487,53 @@ async def create_datastore(
         endpoint=endpoint,
         access_key=access_key,
         secret_key=secret_key,
+        use_virtual_addressing=virtual_addr,
+        url_expiration_minutes=url_expiration_minutes or 10080,
     )
 
     if result == "SUCCESS":
-        state.log(f"✅ DataStore '{name}' created")
-        # Reload datastores
-        datastores = await ll_client.list_datastores(state.token, filespace_id)
-        state.datastores = {ds.get("name", ds.get("id")): ds.get("id") for ds in datastores}
+        state.log(f"DataStore '{name}' created")
 
-        return templates.TemplateResponse("partials/datastore_select.html", {
+        # Reload datastores to get the new one's ID
+        datastores = await ll_client.list_datastores(state.token, filespace_id)
+        state.datastores = {}
+        datastores_data = []
+        new_datastore_id = None
+
+        for ds in datastores:
+            ds_id = ds.get("id")
+            ds_name = ds.get("name", ds_id)
+            state.datastores[ds_name] = ds
+            s3_params = ds.get("s3StorageParams", {})
+            datastores_data.append({
+                "id": ds_id,
+                "name": ds_name,
+                "bucket": s3_params.get("bucketName", ""),
+            })
+            if ds_name == name:
+                new_datastore_id = ds_id
+
+        # Auto-save credentials for the new DataStore
+        if new_datastore_id:
+            state.save_datastore_for_browsing(
+                datastore_id=new_datastore_id,
+                datastore_name=name,
+                filespace_id=filespace_id,
+                filespace_name=state.selected_filespace,
+                bucket_name=bucket,
+                region=region,
+                endpoint=endpoint,
+                aws_access_key=access_key,
+                aws_secret_key=secret_key,
+            )
+
+        return templates.TemplateResponse("partials/datastore_list.html", {
             "request": request,
-            "datastores": list(state.datastores.keys()),
-            "selected": name,
+            "datastores": datastores_data,
             "success": f"DataStore '{name}' created successfully",
         })
     else:
-        state.log(f"❌ Error creating datastore: {result}")
+        state.log(f"Error creating datastore: {result}")
         return templates.TemplateResponse("partials/create_datastore_error.html", {
             "request": request,
             "error": result,
@@ -255,97 +542,143 @@ async def create_datastore(
 
 # ============== S3 Browser ==============
 
-@app.get("/api/browse", response_class=HTMLResponse)
-async def browse(request: Request, prefix: str = ""):
-    """Browse S3 bucket contents."""
-    if not state.is_connected:
-        return templates.TemplateResponse("partials/not_connected.html", {
+@app.get("/api/browse/{datastore_id}", response_class=HTMLResponse)
+async def browse_datastore(
+    request: Request,
+    datastore_id: str,
+    prefix: str = "",
+):
+    """Browse S3 for a specific DataStore."""
+    cred = state.get_datastore_by_id(datastore_id)
+    if not cred:
+        return templates.TemplateResponse("partials/connection_error.html", {
             "request": request,
+            "error": f"DataStore credentials not found. Please add credentials in Settings.",
         })
 
-    state.current_prefix = prefix
-    items = await state.s3_service.list_objects(state.current_bucket, prefix)
+    s3_service = state.get_s3_service_for_datastore(datastore_id)
+    if not s3_service:
+        return templates.TemplateResponse("partials/connection_error.html", {
+            "request": request,
+            "error": "S3 service not initialized for this DataStore",
+        })
 
-    return templates.TemplateResponse("partials/browser_contents.html", {
-        "request": request,
-        "bucket": state.current_bucket,
-        "prefix": prefix,
-        "items": items,
-        "can_go_back": bool(prefix),
-    })
+    try:
+        bucket = cred.get("bucket_name")
+        items = await s3_service.list_objects(bucket, prefix)
+
+        return templates.TemplateResponse("partials/datastore_browser.html", {
+            "request": request,
+            "datastore_id": datastore_id,
+            "bucket": bucket,
+            "prefix": prefix,
+            "items": items,
+        })
+
+    except Exception as e:
+        state.log(f"Browse error: {e}")
+        return templates.TemplateResponse("partials/connection_error.html", {
+            "request": request,
+            "error": str(e),
+        })
 
 
-@app.get("/api/browse/back", response_class=HTMLResponse)
-async def browse_back(request: Request):
-    """Navigate back in S3 browser."""
-    if state.current_prefix:
-        # Go up one level
-        parts = state.current_prefix.rstrip("/").split("/")
+@app.get("/api/browse/{datastore_id}/back", response_class=HTMLResponse)
+async def browse_datastore_back(
+    request: Request,
+    datastore_id: str,
+    prefix: str = "",
+):
+    """Navigate back in DataStore S3 browser."""
+    # Calculate new prefix (go up one level)
+    new_prefix = ""
+    if prefix:
+        parts = prefix.rstrip("/").split("/")
         new_prefix = "/".join(parts[:-1])
         if new_prefix:
             new_prefix += "/"
-        state.current_prefix = new_prefix
 
-    items = await state.s3_service.list_objects(state.current_bucket, state.current_prefix)
-
-    return templates.TemplateResponse("partials/browser_contents.html", {
-        "request": request,
-        "bucket": state.current_bucket,
-        "prefix": state.current_prefix,
-        "items": items,
-        "can_go_back": bool(state.current_prefix),
-    })
+    return await browse_datastore(request, datastore_id, new_prefix)
 
 
 # ============== Import Operations ==============
 
 @app.post("/api/import/file")
-async def import_file(request: Request, key: str = Form(...)):
+async def import_file(
+    request: Request,
+    key: str = Form(...),
+    datastore_id: str = Form(...),
+):
     """Import a single file from S3 to LucidLink."""
-    state.log(f"📄 Importing: {key}")
+    state.log(f"Importing: {key}")
     state.progress = 0.1
 
     try:
+        # Get DataStore credentials
+        cred = state.get_datastore_by_id(datastore_id)
+        if not cred:
+            raise ValueError(f"DataStore credentials not found")
+
+        bucket_name = cred.get("bucket_name", "")
+        filespace_id = cred.get("filespace_id", "")
+
+        if not bucket_name:
+            raise ValueError("No bucket specified")
+
+        # Create LucidLink client for this import
+        ll_client = LucidLinkClient(api_host=state.api_host)
+        ll_client.configure(
+            token=state.token,
+            filespace_id=filespace_id,
+            datastore_id=datastore_id,
+            api_host=state.api_host,
+        )
+
         # Build LucidLink path nested under bucket name
-        bucket_name = state.current_bucket
         ll_path = f"/{bucket_name}/{key}"
 
-        # Ensure folder structure exists (including bucket folder)
-        structure_ok, structure_error = await state.ll_client.ensure_structure(ll_path)
+        # Ensure folder structure exists
+        structure_ok, structure_error = await ll_client.ensure_structure(ll_path)
         if structure_ok:
             state.progress = 0.6
-            code, error_msg = await state.ll_client.import_file(key, ll_path)
+            code, error_msg = await ll_client.import_file(key, ll_path)
 
             if code in [200, 201]:
-                state.log(f"✅ Success: {key.split('/')[-1]}")
+                state.log(f"Success: {key.split('/')[-1]}")
             elif code in [400, 409]:
-                state.log(f"⏭️ Already exists: {key.split('/')[-1]}")
+                state.log(f"Already exists: {key.split('/')[-1]}")
             else:
-                state.log(f"❌ Error ({code}): {key.split('/')[-1]} - {error_msg}")
+                state.log(f"Error ({code}): {key.split('/')[-1]} - {error_msg}")
         else:
-            state.log(f"❌ Failed to create folder structure for: {key} - {structure_error}")
+            state.log(f"Failed to create folder structure for: {key} - {structure_error}")
 
+        await ll_client.close()
         state.progress = 1.0
         return {"status": "complete"}
 
     except Exception as e:
-        state.log(f"❌ Exception: {e}")
+        state.log(f"Exception: {e}")
         state.progress = 1.0
         return {"status": "error", "message": str(e)}
 
 
 @app.post("/api/import/folder", response_class=HTMLResponse)
-async def import_folder(request: Request, prefix: str = Form(...)):
+async def import_folder(
+    request: Request,
+    prefix: str = Form(...),
+    datastore_id: str = Form(...),
+):
     """Add a folder import job to the queue."""
-    if not state.is_connected:
+    # Get DataStore credentials
+    cred = state.get_datastore_by_id(datastore_id)
+    if not cred:
         return templates.TemplateResponse("partials/job_error.html", {
             "request": request,
-            "error": "Not connected",
+            "error": f"DataStore credentials not found",
         })
 
-    # Validate we have the required IDs
-    filespace_id = state.filespaces.get(state.selected_filespace, "")
-    datastore_id = state.datastores.get(state.selected_datastore, "")
+    filespace_id = cred.get("filespace_id", "")
+    bucket = cred.get("bucket_name", "")
 
     if not filespace_id or not datastore_id:
         return templates.TemplateResponse("partials/job_error.html", {
@@ -353,8 +686,14 @@ async def import_folder(request: Request, prefix: str = Form(...)):
             "error": "Missing filespace or datastore configuration",
         })
 
+    if not bucket:
+        return templates.TemplateResponse("partials/job_error.html", {
+            "request": request,
+            "error": "No bucket specified",
+        })
+
     job_id = await job_queue.add_job(
-        bucket=state.current_bucket,
+        bucket=bucket,
         prefix=prefix,
         filespace_id=filespace_id,
         datastore_id=datastore_id,
@@ -400,7 +739,6 @@ async def cancel_job(request: Request, job_id: int):
 @app.delete("/api/jobs/{job_id}", response_class=HTMLResponse)
 async def delete_job(request: Request, job_id: int):
     """Delete a job from history."""
-    from services import database as db
     db.delete_job(job_id)
     jobs = job_queue.get_jobs()
     status = job_queue.get_queue_status()
@@ -415,7 +753,6 @@ async def delete_job(request: Request, job_id: int):
 @app.post("/api/jobs/clear", response_class=HTMLResponse)
 async def clear_jobs(request: Request):
     """Clear completed jobs."""
-    from services import database as db
     db.clear_completed_jobs()
     jobs = job_queue.get_jobs()
     status = job_queue.get_queue_status()
@@ -493,39 +830,44 @@ async def clear_logs():
 @app.get("/api/tab/settings", response_class=HTMLResponse)
 async def tab_settings(request: Request):
     """Return settings tab content."""
-    # Get saved AWS credentials (masked for display)
-    aws_key, aws_secret = state.get_saved_aws_credentials()
+    browsable_datastores = state.get_browsable_datastores()
+
+    # Build datastores data for list view
+    datastores_data = []
+    for name, ds in state.datastores.items():
+        s3_params = ds.get("s3StorageParams", {})
+        datastores_data.append({
+            "id": ds.get("id"),
+            "name": name,
+            "bucket": s3_params.get("bucketName", ""),
+        })
 
     return templates.TemplateResponse("partials/settings.html", {
         "request": request,
         "filespaces": list(state.filespaces.keys()) if state.filespaces else [],
-        "datastores": list(state.datastores.keys()) if state.datastores else [],
+        "datastores": datastores_data,
         "selected_filespace": state.selected_filespace,
         "selected_datastore": state.selected_datastore,
-        "current_bucket": state.current_bucket,
         "saved_token": state.token,
         "saved_api_host": state.api_host,
-        "saved_aws_key": aws_key or "",
-        "has_saved_aws_secret": bool(aws_secret),
+        "browsable_datastores": browsable_datastores,
     })
 
 
 @app.get("/api/tab/browser", response_class=HTMLResponse)
 async def tab_browser(request: Request):
     """Return browser tab content."""
-    if not state.is_connected:
-        return templates.TemplateResponse("partials/not_connected.html", {
+    browsable_datastores = state.get_browsable_datastores()
+
+    if browsable_datastores:
+        return templates.TemplateResponse("partials/browser.html", {
             "request": request,
+            "datastores": browsable_datastores,
+            "active_datastore_id": browsable_datastores[0]["datastore_id"] if browsable_datastores else None,
         })
 
-    items = await state.s3_service.list_objects(state.current_bucket, state.current_prefix)
-
-    return templates.TemplateResponse("partials/browser.html", {
+    return templates.TemplateResponse("partials/not_connected.html", {
         "request": request,
-        "connected": True,
-        "bucket": state.current_bucket,
-        "prefix": state.current_prefix,
-        "items": items,
     })
 
 

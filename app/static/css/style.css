@@ -222,7 +222,48 @@ p {
 }
 
 .card-icon {
-    font-size: 1.5rem;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.card-icon img {
+    width: 100%;
+    height: 100%;
+    filter: invert(73%) sepia(67%) saturate(497%) hue-rotate(32deg) brightness(106%) contrast(98%);
+}
+
+.icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.icon-sm {
+    width: 16px;
+    height: 16px;
+}
+
+.icon-lg {
+    width: 32px;
+    height: 32px;
+}
+
+.icon-xl {
+    width: 48px;
+    height: 48px;
+}
+
+.icon-white {
+    filter: invert(1);
+}
+
+.icon-neon {
+    filter: invert(73%) sepia(67%) saturate(497%) hue-rotate(32deg) brightness(106%) contrast(98%);
+}
+
+.icon-muted {
+    filter: invert(60%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(90%) contrast(90%);
 }
 
 .card-title {
@@ -625,7 +666,9 @@ p {
 }
 
 .browser-icon {
-    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
 }
 
@@ -670,9 +713,12 @@ p {
 }
 
 .not-connected-icon {
-    font-size: 4rem;
     margin-bottom: var(--space-lg);
-    opacity: 0.5;
+}
+
+.not-connected-icon .icon {
+    width: 64px;
+    height: 64px;
 }
 
 .not-connected-title {
@@ -1005,4 +1051,255 @@ p {
         transform: translateX(0);
         opacity: 1;
     }
+}
+
+/* ============================================
+   DataStore UI Components
+   ============================================ */
+
+/* Form Row - side by side */
+.form-row {
+    display: flex;
+    gap: var(--space-md);
+    align-items: flex-end;
+}
+
+.form-row .flex-grow {
+    flex: 1;
+}
+
+/* DataStore List in Settings */
+.datastore-list {
+    border-top: 1px solid var(--color-gray-70);
+    padding-top: var(--space-md);
+}
+
+.datastore-items {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.datastore-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-sm) var(--space-md);
+    background-color: var(--color-gray-80);
+    border-radius: var(--radius-md);
+}
+
+.datastore-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.datastore-item-label {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--color-white);
+}
+
+.datastore-item-detail {
+    font-size: 0.75rem;
+    color: var(--color-gray-40);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* DataStore Accordion in Browser */
+.datastore-accordion {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.datastore-section {
+    background-color: var(--color-gray-90);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.datastore-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-md) var(--space-lg);
+    background-color: var(--color-gray-90);
+    border: none;
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+}
+
+.datastore-header:hover {
+    background-color: var(--color-gray-80);
+}
+
+.datastore-header.expanded {
+    border-bottom: 1px solid var(--color-gray-70);
+}
+
+.datastore-header-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.datastore-label {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--color-neon);
+}
+
+.datastore-bucket {
+    font-size: 0.75rem;
+    color: var(--color-gray-40);
+}
+
+.datastore-toggle {
+    color: var(--color-gray-40);
+    display: flex;
+    align-items: center;
+}
+
+.datastore-content {
+    padding: var(--space-md);
+    background-color: var(--color-gray-90);
+}
+
+.datastore-browser {
+    /* Inner browser within accordion */
+}
+
+.datastore-browser .browser-header {
+    margin-bottom: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+}
+
+/* Loading placeholder */
+.loading-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+    padding: var(--space-xl);
+    color: var(--color-gray-40);
+}
+
+/* Form hint */
+.form-hint {
+    display: block;
+    margin-top: var(--space-xs);
+    font-size: 0.75rem;
+    color: var(--color-gray-50);
+}
+
+/* Close button */
+.btn-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--color-gray-50);
+    cursor: pointer;
+    font-size: 1.25rem;
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.btn-close:hover {
+    color: var(--color-white);
+    background-color: var(--color-gray-70);
+}
+
+/* ============================================
+   DataStore Row (List View)
+   ============================================ */
+.datastore-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-md);
+    background-color: var(--color-gray-80);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-sm);
+}
+
+.datastore-row:last-child {
+    margin-bottom: 0;
+}
+
+.datastore-row-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.datastore-row-name {
+    font-weight: 600;
+    font-size: 0.9375rem;
+    color: var(--color-white);
+}
+
+.datastore-row-bucket {
+    font-size: 0.75rem;
+    color: var(--color-gray-40);
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.datastore-row-actions {
+    display: flex;
+    gap: var(--space-sm);
+    flex-shrink: 0;
+    margin-left: var(--space-md);
+}
+
+/* ============================================
+   Info Grid (Modal)
+   ============================================ */
+.info-grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.info-row {
+    display: flex;
+    padding: var(--space-sm) 0;
+    border-bottom: 1px solid var(--color-gray-80);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    flex: 0 0 140px;
+    font-size: 0.875rem;
+    color: var(--color-gray-40);
+}
+
+.info-value {
+    flex: 1;
+    font-size: 0.875rem;
+    color: var(--color-white);
+    word-break: break-all;
+}
+
+.info-mono {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.8125rem;
 }

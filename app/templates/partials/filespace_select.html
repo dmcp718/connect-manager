@@ -9,7 +9,7 @@
     name="filespace"
     class="form-select"
     hx-post="/api/load-datastores"
-    hx-target="#datastore-container"
+    hx-target="#datastore-list-container"
     hx-swap="innerHTML"
     hx-trigger="change"
 >
@@ -17,6 +17,33 @@
     <option value="{{ fs }}" {% if fs == selected %}selected{% endif %}>{{ fs }}</option>
     {% endfor %}
 </select>
+
+<!-- DataStore List - auto-loaded with filespaces -->
+<div id="datastore-list-container" class="mt-4">
+    {% if datastores is defined and datastores %}
+    {% include "partials/datastore_list.html" %}
+    {% else %}
+    <div class="card">
+        <div class="card-header">
+            <span class="card-icon"><img src="/static/img/icons/database.svg" alt=""></span>
+            <h3 class="card-title">DataStores</h3>
+            <button
+                type="button"
+                class="btn btn-indigo"
+                style="margin-left: auto;"
+                hx-get="/api/create-datastore-modal"
+                hx-target="#modal-container"
+                hx-swap="innerHTML"
+            >
+                + Create new
+            </button>
+        </div>
+        <div class="card-body">
+            <p class="text-muted">No DataStores found for this filespace.</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
 {% else %}
 <p class="text-muted">Load filespaces using the button above</p>
 {% endif %}

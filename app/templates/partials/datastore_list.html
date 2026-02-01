@@ -1,0 +1,65 @@
+{% if success %}
+<div class="alert alert-success">
+    {{ success }}
+</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-error">
+    {{ error }}
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <span class="card-icon"><img src="/static/img/icons/database.svg" alt=""></span>
+        <h3 class="card-title">DataStores</h3>
+        <button
+            type="button"
+            class="btn btn-indigo"
+            style="margin-left: auto;"
+            hx-get="/api/create-datastore-modal"
+            hx-target="#modal-container"
+            hx-swap="innerHTML"
+        >
+            + Create new
+        </button>
+    </div>
+    <div class="card-body">
+        {% if datastores %}
+        <div class="datastore-items">
+            {% for ds in datastores %}
+            <div class="datastore-row">
+                <div class="datastore-row-info">
+                    <span class="datastore-row-name">{{ ds.name }}</span>
+                    <span class="datastore-row-bucket">s3://{{ ds.bucket }}</span>
+                </div>
+                <div class="datastore-row-actions">
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        hx-get="/api/datastores/{{ ds.id }}/info"
+                        hx-target="#modal-container"
+                        hx-swap="innerHTML"
+                    >
+                        Info
+                    </button>
+                    <button
+                        type="button"
+                        class="btn btn-ghost btn-sm"
+                        hx-delete="/api/datastores/{{ ds.id }}"
+                        hx-target="#datastore-list-container"
+                        hx-swap="innerHTML"
+                        hx-confirm="Delete DataStore '{{ ds.name }}'? This action cannot be undone."
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">No DataStores. Create one to get started.</p>
+        {% endif %}
+    </div>
+</div>

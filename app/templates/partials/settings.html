@@ -1,72 +1,12 @@
-<div class="settings-container" x-data="{
-    bucket: '{{ current_bucket or 'native-layout-demonstration' }}',
-    token: '{{ saved_token or '' }}',
-    datastore: '{{ selected_datastore or '' }}',
-    get isValid() {
-        return this.bucket.trim() !== '' && this.datastore.trim() !== ''
-    }
-}">
-    <!-- S3 Explorer Configuration -->
-    <div class="card">
-        <div class="card-header">
-            <span class="card-icon">🔍</span>
-            <h3 class="card-title">S3 explorer configuration</h3>
-        </div>
-        <div class="card-body">
-            <form id="s3-config-form">
-                <div class="form-group">
-                    <label class="form-label" for="bucket">Bucket name</label>
-                    <input
-                        type="text"
-                        id="bucket"
-                        name="bucket"
-                        class="form-input"
-                        x-model="bucket"
-                        placeholder="Enter S3 bucket name"
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="aws_key">Access key ID (optional)</label>
-                    <input
-                        type="text"
-                        id="aws_key"
-                        name="aws_key"
-                        class="form-input"
-                        value="{{ saved_aws_key or '' }}"
-                        placeholder="Leave empty to use default credentials"
-                    >
-                </div>
-
-                <div class="form-group" x-data="{ show: false }">
-                    <label class="form-label" for="aws_secret">Secret key (optional){% if has_saved_aws_secret %} <span class="text-success">(saved)</span>{% endif %}</label>
-                    <div class="input-password">
-                        <input
-                            :type="show ? 'text' : 'password'"
-                            id="aws_secret"
-                            name="aws_secret"
-                            class="form-input"
-                            placeholder="{% if has_saved_aws_secret %}Leave empty to use saved key{% else %}Leave empty to use default credentials{% endif %}"
-                        >
-                        <button type="button" class="btn-eye" @click="show = !show" :title="show ? 'Hide' : 'Show'">
-                            <svg x-show="!show" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                            <svg x-show="show" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
-                        </button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
-
+<div class="settings-container">
     <!-- LucidLink Configuration -->
     <div class="card">
         <div class="card-header">
-            <span class="card-icon">🔗</span>
             <h3 class="card-title">LucidLink configuration</h3>
         </div>
         <div class="card-body">
             <div class="form-group">
-                <label class="form-label" for="api_host">API endpoint{% if saved_api_host %} <span class="text-success">(saved)</span>{% endif %}</label>
+                <label class="form-label" for="api_host">API Endpoint{% if saved_api_host %} <span class="text-success">(saved)</span>{% endif %}</label>
                 <input
                     type="text"
                     id="api_host"
@@ -78,7 +18,7 @@
             </div>
 
             <div class="form-group" x-data="{ show: false }">
-                <label class="form-label" for="token">API token (Bearer){% if saved_token %} <span class="text-success">(saved)</span>{% endif %}</label>
+                <label class="form-label" for="token">API Token (Bearer){% if saved_token %} <span class="text-success">(saved)</span>{% endif %}</label>
                 <div class="input-password">
                     <input
                         :type="show ? 'text' : 'password'"
@@ -104,39 +44,55 @@
                 hx-swap="innerHTML"
                 hx-indicator="#loading-indicator"
             >
-                Load filespaces
+                Load Filespaces
             </button>
 
             <div id="loading-indicator" class="htmx-indicator">
                 <span class="spinner"></span> Loading...
             </div>
 
-            <!-- Filespace Select -->
+            <!-- Filespace Select (includes DataStore list) -->
             <div id="filespace-container" class="form-group mt-4">
                 {% include "partials/filespace_select.html" %}
-            </div>
-
-            <!-- Datastore Select -->
-            <div id="datastore-container" class="form-group" @datastore-changed.window="datastore = $event.detail.value">
-                {% include "partials/datastore_select.html" %}
             </div>
         </div>
     </div>
 
-    <!-- Connect Button -->
-    <form
-        hx-post="/api/connect"
-        hx-target="#tab-content"
-        hx-swap="innerHTML"
-        hx-include="#bucket, #aws_key, #aws_secret, #datastore"
-    >
-        <button
-            type="submit"
-            class="btn btn-primary btn-lg btn-full"
-            :disabled="!isValid"
-            :class="{ 'btn-disabled': !isValid }"
-        >
-            ✓ Connect & save
-        </button>
-    </form>
+    <!-- Saved DataStores (for browsing) -->
+    {% if browsable_datastores %}
+    <div class="card">
+        <div class="card-header">
+            <span class="card-icon"><img src="/static/img/icons/hard-drive.svg" alt=""></span>
+            <h3 class="card-title">Saved DataStores</h3>
+        </div>
+        <div class="card-body">
+            <p class="text-muted" style="margin-bottom: var(--space-md); font-size: 0.875rem;">
+                DataStores with saved credentials for S3 browsing
+            </p>
+            <div class="datastore-list">
+                <div class="datastore-items">
+                    {% for ds in browsable_datastores %}
+                    <div class="datastore-item">
+                        <div class="datastore-item-info">
+                            <span class="datastore-item-label">{{ ds.datastore_name }}</span>
+                            <span class="datastore-item-detail">
+                                {{ ds.bucket_name }} ({{ ds.filespace_name }})
+                            </span>
+                        </div>
+                        <button
+                            class="btn btn-ghost btn-sm"
+                            hx-delete="/api/datastores/{{ ds.datastore_id }}/credentials"
+                            hx-target="#tab-content"
+                            hx-swap="innerHTML"
+                            hx-confirm="Remove browsing credentials for '{{ ds.datastore_name }}'?"
+                        >
+                            <img src="/static/img/icons/x.svg" alt="Remove" class="icon icon-sm icon-muted">
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>

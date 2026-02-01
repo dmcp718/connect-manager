@@ -1,6 +1,7 @@
 """
 ARQ Worker for Import Jobs
 Parallel job processing with Valkey/Redis backend
+DataStore-centric credential lookup
 """
 
 import asyncio
@@ -44,12 +45,12 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
 
     job = db.get_job(job_id)
     if not job:
-        await log(f"❌ Job #{job_id} not found")
+        await log(f"Job #{job_id} not found")
         return {"status": "error", "message": f"Job {job_id} not found"}
 
     # Mark as running
     db.update_job(job_id, status="running")
-    await log(f"🚀 Job #{job_id} started: {job['prefix']}")
+    await log(f"Job #{job_id} started: {job['prefix']}")
 
     ll_client = None
     try:
@@ -58,7 +59,23 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         if not token:
             raise ValueError("No API token available - please reconnect in web UI")
 
-        aws_key, aws_secret = secrets.get_aws_credentials()
+        # Get AWS credentials from DataStore credentials
+        aws_key, aws_secret = None, None
+        s3_endpoint = None
+        s3_region = "us-east-1"
+
+        datastore_id = job.get("datastore_id")
+        if datastore_id:
+            cred = db.get_datastore_credentials(datastore_id)
+            if cred:
+                credentials_key = cred.get("credentials_key")
+                aws_key, aws_secret = secrets.get_named_credentials(credentials_key)
+                s3_endpoint = cred.get("endpoint")
+                s3_region = cred.get("region") or "us-east-1"
+                await log(f"Using DataStore: {cred.get('datastore_name', 'Unknown')}")
+
+        if not aws_key or not aws_secret:
+            raise ValueError("No AWS credentials found for this DataStore")
 
         # Validate job has required IDs
         if not job.get("filespace_id") or not job.get("datastore_id"):
@@ -67,10 +84,15 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         # Get saved API host
         api_host = db.get_setting("api_host") or ""
 
-        await log(f"📋 Using filespace: {job['filespace_id'][:8]}...")
+        await log(f"Using filespace: {job['filespace_id'][:8]}...")
 
         # Initialize clients
-        s3_service = S3Service(access_key=aws_key, secret_key=aws_secret)
+        s3_service = S3Service(
+            access_key=aws_key,
+            secret_key=aws_secret,
+            region=s3_region,
+            endpoint_url=s3_endpoint,
+        )
 
         ll_client = LucidLinkClient(api_host=api_host)
         ll_client.configure(
@@ -81,17 +103,17 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         )
 
         # Scan for files
-        await log("📂 Scanning folder...")
+        await log("Scanning folder...")
         keys = await s3_service.list_all_objects(job["bucket"], job["prefix"])
         total = len(keys)
 
         if total == 0:
-            await log("⚠️ No files found")
+            await log("No files found")
             db.update_job(job_id, status="completed", total_files=0)
             return {"status": "completed", "total": 0}
 
         db.update_job(job_id, total_files=total)
-        await log(f"📄 Found {total} files")
+        await log(f"Found {total} files")
 
         # Pre-create folder structure (nested under bucket name)
         bucket_name = job["bucket"]
@@ -103,22 +125,22 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
                 unique_dirs.add(f"{bucket_name}/{d}")
 
         sorted_dirs = sorted(list(unique_dirs), key=len)
-        await log(f"📂 Creating {len(sorted_dirs)} directories...")
+        await log(f"Creating {len(sorted_dirs)} directories...")
 
         # Create folders sequentially (parallel causes race conditions)
         for d in sorted_dirs:
             success, error = await ll_client.ensure_structure(d + "/dummy_file")
             if not success:
-                await log(f"⚠️ Failed to create folder {d}: {error}")
+                await log(f"Failed to create folder {d}: {error}")
 
         # Check for cancellation
         job = db.get_job(job_id)
         if job and job.get("status") == "cancelled":
-            await log(f"🛑 Job #{job_id} cancelled")
+            await log(f"Job #{job_id} cancelled")
             return {"status": "cancelled"}
 
         # Import files in parallel batches
-        await log("🚀 Importing files...")
+        await log("Importing files...")
         completed = 0
         failed = 0
         total_new = 0
@@ -151,7 +173,10 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
                     code, error_msg = result
                     if code in [200, 201]:  # Newly imported
                         batch_new += 1
-                    elif code in [400, 409]:  # Already exists
+                    elif code == 409:  # Conflict = Already exists
+                        batch_skipped += 1
+                    elif code == 400 and "already exists" in error_msg.lower():
+                        # LucidLink API returns 400 for existing entries
                         batch_skipped += 1
                     else:
                         batch_failed += 1
@@ -166,9 +191,9 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
             # Log batch progress with breakdown
             progress_pct = int((completed + failed) / total * 100)
             if first_error and batch_failed > 0:
-                await log(f"📊 Progress: {completed + failed}/{total} ({progress_pct}%) - {batch_new} new, {batch_skipped} skipped, {batch_failed} errors: {first_error}")
+                await log(f"Progress: {completed + failed}/{total} ({progress_pct}%) - {batch_new} new, {batch_skipped} skipped, {batch_failed} errors: {first_error}")
             else:
-                await log(f"📊 Progress: {completed + failed}/{total} ({progress_pct}%) - {batch_new} new, {batch_skipped} skipped, {batch_failed} errors")
+                await log(f"Progress: {completed + failed}/{total} ({progress_pct}%) - {batch_new} new, {batch_skipped} skipped, {batch_failed} errors")
 
             # Update progress
             db.update_job(
@@ -183,15 +208,15 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         # Final status
         job = db.get_job(job_id)
         if job and job.get("status") == "cancelled":
-            await log(f"🛑 Job #{job_id} cancelled ({completed}/{total} files)")
+            await log(f"Job #{job_id} cancelled ({completed}/{total} files)")
             return {"status": "cancelled", "completed": completed, "failed": failed}
 
         db.update_job(job_id, status="completed")
-        await log(f"✅ Job #{job_id} complete: {total_new} new, {total_skipped} skipped, {failed} failed")
+        await log(f"Job #{job_id} complete: {total_new} new, {total_skipped} skipped, {failed} failed")
         return {"status": "completed", "completed": completed, "failed": failed, "new": total_new, "skipped": total_skipped}
 
     except Exception as e:
-        await log(f"❌ Job #{job_id} failed: {e}")
+        await log(f"Job #{job_id} failed: {e}")
         db.update_job(job_id, status="failed", error_message=str(e))
         return {"status": "failed", "message": str(e)}
     finally:
