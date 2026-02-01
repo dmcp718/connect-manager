@@ -1,9 +1,11 @@
 """
 Secure Secret Storage
-- Docker/Container: File-based storage in DATA_DIR
+- Docker/Container: Encrypted file-based storage in DATA_DIR (Fernet AES-128)
 - Local development: System keyring (macOS Keychain, Windows Credential Locker, Linux Secret Service)
 """
 
+import base64
+import hashlib
 import json
 import os
 import uuid
@@ -14,12 +16,33 @@ from typing import Optional, Tuple
 _data_dir = os.getenv("DATA_DIR")
 _container_mode = bool(_data_dir)
 
-if not _container_mode:
+if _container_mode:
+    from cryptography.fernet import Fernet, InvalidToken
+else:
     import keyring
 
 # Service name / file name
 SERVICE_NAME = "lucidlink-labs"
-SECRETS_FILE = Path(_data_dir) / "secrets.json" if _data_dir else None
+SECRETS_FILE = Path(_data_dir) / "secrets.enc" if _data_dir else None
+_LEGACY_SECRETS_FILE = Path(_data_dir) / "secrets.json" if _data_dir else None
+
+
+def _get_fernet_key() -> bytes:
+    """Derive a Fernet key from JWT_SECRET_KEY using PBKDF2."""
+    jwt_secret = os.getenv("JWT_SECRET_KEY", "")
+    if not jwt_secret:
+        raise RuntimeError("JWT_SECRET_KEY environment variable required for secrets encryption")
+
+    # Use PBKDF2 to derive a 32-byte key, then base64 encode for Fernet
+    # Salt is fixed (app-specific) since we need deterministic key derivation
+    salt = b"lucidlink-labs-secrets-v1"
+    key = hashlib.pbkdf2_hmac("sha256", jwt_secret.encode(), salt, iterations=100000, dklen=32)
+    return base64.urlsafe_b64encode(key)
+
+
+def _get_fernet() -> "Fernet":
+    """Get a Fernet instance for encryption/decryption."""
+    return Fernet(_get_fernet_key())
 
 # Secret keys
 KEY_LL_TOKEN = "lucidlink_api_token"
@@ -27,21 +50,56 @@ KEY_AWS_ACCESS_KEY = "aws_access_key"
 KEY_AWS_SECRET_KEY = "aws_secret_key"
 
 
+def _migrate_legacy_secrets() -> Optional[dict]:
+    """Check for and migrate plaintext secrets.json to encrypted format."""
+    if not _LEGACY_SECRETS_FILE or not _LEGACY_SECRETS_FILE.exists():
+        return None
+
+    try:
+        # Read plaintext secrets
+        plaintext = _LEGACY_SECRETS_FILE.read_text()
+        secrets = json.loads(plaintext)
+
+        # Save in encrypted format
+        _save_secrets(secrets)
+
+        # Remove legacy file
+        _LEGACY_SECRETS_FILE.unlink()
+
+        return secrets
+    except Exception:
+        return None
+
+
 def _load_secrets() -> dict:
-    """Load secrets from file (container mode)."""
+    """Load secrets from encrypted file (container mode)."""
+    # Check for legacy plaintext file and migrate
+    migrated = _migrate_legacy_secrets()
+    if migrated is not None:
+        return migrated
+
     if SECRETS_FILE and SECRETS_FILE.exists():
         try:
-            return json.loads(SECRETS_FILE.read_text())
+            fernet = _get_fernet()
+            encrypted_data = SECRETS_FILE.read_bytes()
+            decrypted = fernet.decrypt(encrypted_data)
+            return json.loads(decrypted.decode())
+        except InvalidToken:
+            # Corrupted or wrong key - return empty
+            return {}
         except Exception:
             return {}
     return {}
 
 
 def _save_secrets(secrets: dict) -> None:
-    """Save secrets to file (container mode)."""
+    """Save secrets to encrypted file (container mode)."""
     if SECRETS_FILE:
         SECRETS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        SECRETS_FILE.write_text(json.dumps(secrets))
+        fernet = _get_fernet()
+        plaintext = json.dumps(secrets).encode()
+        encrypted = fernet.encrypt(plaintext)
+        SECRETS_FILE.write_bytes(encrypted)
         # Restrict file permissions
         os.chmod(SECRETS_FILE, 0o600)
 

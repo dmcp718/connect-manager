@@ -20,11 +20,17 @@ show_help() {
     echo "  build       Rebuild and start"
     echo "  clean       Stop and remove all containers/volumes"
     echo ""
-    echo "Production Commands:"
+    echo "Production Commands (with built-in Caddy):"
     echo "  prod        Start with Caddy reverse proxy (HTTPS)"
     echo "  prod-build  Rebuild and start production"
     echo "  prod-stop   Stop production deployment"
     echo "  prod-logs   Show production logs"
+    echo ""
+    echo "Production Commands (with shared/external Caddy):"
+    echo "  prod-shared       Start without Caddy (use external reverse proxy)"
+    echo "  prod-shared-build Rebuild and start (external proxy mode)"
+    echo "  prod-shared-stop  Stop external proxy deployment"
+    echo "  prod-shared-logs  Show logs (external proxy mode)"
     echo ""
     echo "  help        Show this help message"
     echo ""
@@ -147,6 +153,34 @@ case "${1:-start}" in
     prod-logs)
         check_docker
         docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f
+        ;;
+    prod-shared)
+        check_docker
+        check_prod_env
+        echo "Starting CONNECT Manager (external reverse proxy mode)..."
+        docker compose -f docker-compose.yml -f docker-compose.prod-shared.yml up -d
+        echo ""
+        echo "Application started on localhost:8000"
+        echo "Configure your external reverse proxy to forward to this port."
+        ;;
+    prod-shared-build)
+        check_docker
+        check_prod_env
+        echo "Rebuilding and starting CONNECT Manager (external reverse proxy mode)..."
+        docker compose -f docker-compose.yml -f docker-compose.prod-shared.yml up --build -d
+        echo ""
+        echo "Application started on localhost:8000"
+        echo "Configure your external reverse proxy to forward to this port."
+        ;;
+    prod-shared-stop)
+        check_docker
+        echo "Stopping CONNECT Manager (external proxy mode)..."
+        docker compose -f docker-compose.yml -f docker-compose.prod-shared.yml down
+        echo "Stopped."
+        ;;
+    prod-shared-logs)
+        check_docker
+        docker compose -f docker-compose.yml -f docker-compose.prod-shared.yml logs -f
         ;;
     help|--help|-h)
         show_help

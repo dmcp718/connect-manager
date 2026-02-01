@@ -23,6 +23,7 @@ A web application for importing S3 objects into LucidLink filespaces using the E
 - **Role-Based Access** - Admin and standard user roles
 - **User Management** - Admins can add/remove users
 - **Per-User Data Isolation** - Each user's DataStore credentials are private
+- **Encrypted Secrets** - AWS credentials encrypted at rest (Fernet AES-128)
 - **Production Deployment** - Caddy reverse proxy with automatic HTTPS
 
 ## Quick Start
@@ -62,6 +63,15 @@ Open http://localhost:8000 in your browser.
 | `prod-build` | Rebuild and start production |
 | `prod-stop` | Stop production deployment |
 | `prod-logs` | Show production logs |
+
+**Production with External Reverse Proxy:**
+
+| Command | Description |
+|---------|-------------|
+| `prod-shared` | Start without Caddy (use external proxy) |
+| `prod-shared-build` | Rebuild and start (external proxy mode) |
+| `prod-shared-stop` | Stop external proxy deployment |
+| `prod-shared-logs` | Show logs (external proxy mode) |
 
 Example: `./run.sh logs` or `run.bat restart`
 
@@ -218,6 +228,25 @@ Swagger UI is available at your API endpoint + `/docs`:
 | `JWT_SECRET_KEY` | Yes | 64-char hex string: `openssl rand -hex 32` |
 | `ADMIN_EMAIL` | No | Initial admin email (default: `admin@localhost`) |
 | `ADMIN_PASSWORD` | No | Initial admin password (default: `admin`) |
+| `CF_API_TOKEN` | No | Cloudflare API token for DNS-01 ACME challenges |
+
+## Security
+
+### Credential Storage
+
+All sensitive credentials (AWS access keys, API tokens) are encrypted at rest:
+
+- **Algorithm**: Fernet (AES-128-CBC + HMAC-SHA256)
+- **Key Derivation**: PBKDF2 with 100,000 iterations from `JWT_SECRET_KEY`
+- **Storage**: `$DATA_DIR/secrets.enc` with 0600 permissions
+
+In local development mode (without `DATA_DIR`), credentials use the system keyring (macOS Keychain, Windows Credential Locker, or Linux Secret Service).
+
+### Authentication
+
+- JWT tokens stored in httponly cookies (not accessible to JavaScript)
+- Passwords hashed with bcrypt
+- Per-user data isolation (users cannot see each other's credentials)
 
 ## Production Deployment (multi-user branch)
 

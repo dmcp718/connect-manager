@@ -1,0 +1,27 @@
+# Production overrides for use with an external/shared Caddy reverse proxy
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod-shared.yml up -d
+# Or:    ./run.sh prod-shared
+#
+# NOTE: The external Caddy must be connected to this Docker network to reach the web service.
+# Run: docker network connect lucidlink-connect-web-app_default caddy
+
+services:
+  web:
+    # No port exposure needed - external Caddy connects via Docker network
+    ports: !override []
+    environment:
+      - VALKEY_HOST=valkey
+      - VALKEY_PORT=6379
+      - DATA_DIR=/data
+      - LL_API_HOST=${LL_API_HOST:-https://dev-admin-api.solutions-eng.online:8443/api/v1}
+      # Production authentication settings
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY environment variable is required}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      - COOKIE_SECURE=true
+      # Initial admin account (created on first startup)
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+
+  valkey:
+    # Remove direct port exposure in production
+    ports: !override []

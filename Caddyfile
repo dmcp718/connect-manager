@@ -1,5 +1,10 @@
 # Caddy reverse proxy configuration for CONNECT Manager
-# Automatic HTTPS via Let's Encrypt
+# Automatic HTTPS via Let's Encrypt with DNS-01 challenge (Cloudflare)
+
+{
+    # Use DNS-01 challenge - no port 80 required, works with multiple Caddy instances
+    acme_dns cloudflare {env.CF_API_TOKEN}
+}
 
 {$DOMAIN} {
     reverse_proxy web:8000

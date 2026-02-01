@@ -10,6 +10,7 @@ Web app for importing S3 objects into LucidLink filespaces via External Data Sto
 - **Backend**: FastAPI + Python 3.12, ARQ workers, Valkey (Redis-compatible)
 - **Frontend**: HTMX + Alpine.js, custom CSS (LucidLink brand)
 - **Auth** (multi-user): JWT tokens, bcrypt passwords, per-user data isolation
+- **Secrets**: Fernet encryption (AES-128) at rest, key derived from JWT_SECRET_KEY
 - **Services**: web (:8000), worker x2, valkey (:6379), caddy (:443 prod)
 
 ## Key Files
@@ -34,10 +35,16 @@ JWT_SECRET_KEY=<openssl rand -hex 32>
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=secure-password
 
-# Start with Caddy reverse proxy
+# Option 1: Built-in Caddy reverse proxy
 ./run.sh prod         # HTTPS :443
 ./run.sh prod-build   # Rebuild prod
 ./run.sh prod-logs    # View logs
+
+# Option 2: External/shared Caddy (no port conflicts)
+./run.sh prod-shared       # No Caddy, use external proxy
+./run.sh prod-shared-build # Rebuild
+# Connect external Caddy to Docker network:
+# docker network connect lucidlink-connect-web-app_default caddy
 ```
 
 ## API Endpoints

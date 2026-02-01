@@ -102,15 +102,19 @@ async def index(request: Request):
     """Main page."""
     state = get_session_from_request(request)
     browsable_datastores = state.get_browsable_datastores()
+    user_id = getattr(request.state, "user_id", None)
 
     # Build datastores data for list view
     datastores_data = []
     for name, ds in state.datastores.items():
         s3_params = ds.get("s3StorageParams", {})
+        ds_id = ds.get("id")
+        has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
         datastores_data.append({
-            "id": ds.get("id"),
+            "id": ds_id,
             "name": name,
             "bucket": s3_params.get("bucketName", ""),
+            "has_credentials": has_creds,
         })
 
     # Get user info for template
@@ -168,6 +172,7 @@ async def load_filespaces(
     # Auto-load datastores for the first filespace
     datastores_data = []
     selected_filespace = None
+    user_id = getattr(request.state, "user_id", None)
     if state.filespaces:
         selected_filespace = list(state.filespaces.keys())[0]
         filespace_id = state.filespaces[selected_filespace]
@@ -180,10 +185,13 @@ async def load_filespaces(
             state.datastores[ds_name] = ds
             # Extract bucket info for display
             s3_params = ds.get("s3StorageParams", {})
+            # Check if user has credentials for this datastore
+            has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
             datastores_data.append({
                 "id": ds_id,
                 "name": ds_name,
                 "bucket": s3_params.get("bucketName", ""),
+                "has_credentials": has_creds,
             })
 
         state.selected_filespace = selected_filespace
@@ -215,16 +223,20 @@ async def load_datastores(request: Request, filespace: str = Form(...)):
     # Store full DataStore info including bucket details
     state.datastores = {}
     datastores_data = []
+    user_id = getattr(request.state, "user_id", None)
     for ds in result:
         ds_id = ds.get("id")
         ds_name = ds.get("name", ds_id)
         state.datastores[ds_name] = ds  # Store full object
         # Extract bucket info for display
         s3_params = ds.get("s3StorageParams", {})
+        # Check if user has credentials for this datastore
+        has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
         datastores_data.append({
             "id": ds_id,
             "name": ds_name,
             "bucket": s3_params.get("bucketName", ""),
+            "has_credentials": has_creds,
         })
 
     state.selected_filespace = filespace
@@ -473,12 +485,16 @@ async def delete_datastore(request: Request, datastore_id: str):
         state.log(f"Error deleting DataStore: {result}")
         # Return current list with error
         datastores_data = []
+        user_id = getattr(request.state, "user_id", None)
         for name, ds in state.datastores.items():
             s3_params = ds.get("s3StorageParams", {})
+            ds_id = ds.get("id")
+            has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
             datastores_data.append({
-                "id": ds.get("id"),
+                "id": ds_id,
                 "name": name,
                 "bucket": s3_params.get("bucketName", ""),
+                "has_credentials": has_creds,
             })
         return templates.TemplateResponse("partials/datastore_list.html", {
             "request": request,
@@ -497,12 +513,16 @@ async def delete_datastore(request: Request, datastore_id: str):
 
     # Return updated list
     datastores_data = []
+    user_id = getattr(request.state, "user_id", None)
     for name, ds in state.datastores.items():
         s3_params = ds.get("s3StorageParams", {})
+        ds_id = ds.get("id")
+        has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
         datastores_data.append({
-            "id": ds.get("id"),
+            "id": ds_id,
             "name": name,
             "bucket": s3_params.get("bucketName", ""),
+            "has_credentials": has_creds,
         })
 
     return templates.TemplateResponse("partials/datastore_list.html", {
@@ -589,16 +609,21 @@ async def create_datastore(
         state.datastores = {}
         datastores_data = []
         new_datastore_id = None
+        user_id = getattr(request.state, "user_id", None)
 
         for ds in datastores:
             ds_id = ds.get("id")
             ds_name = ds.get("name", ds_id)
             state.datastores[ds_name] = ds
             s3_params = ds.get("s3StorageParams", {})
+            # For newly created datastore, credentials will be saved below
+            # For others, check existing credentials
+            has_creds = (ds_name == name) or (db.get_datastore_credentials(ds_id, user_id=user_id) is not None)
             datastores_data.append({
                 "id": ds_id,
                 "name": ds_name,
                 "bucket": s3_params.get("bucketName", ""),
+                "has_credentials": has_creds,
             })
             if ds_name == name:
                 new_datastore_id = ds_id
@@ -936,15 +961,20 @@ async def tab_settings(request: Request):
     """Return settings tab content."""
     state = get_session_from_request(request)
     browsable_datastores = state.get_browsable_datastores()
+    user_id = getattr(request.state, "user_id", None)
 
     # Build datastores data for list view
     datastores_data = []
     for name, ds in state.datastores.items():
         s3_params = ds.get("s3StorageParams", {})
+        ds_id = ds.get("id")
+        # Check if user has credentials for this datastore
+        has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
         datastores_data.append({
-            "id": ds.get("id"),
+            "id": ds_id,
             "name": name,
             "bucket": s3_params.get("bucketName", ""),
+            "has_credentials": has_creds,
         })
 
     return templates.TemplateResponse("partials/settings.html", {
