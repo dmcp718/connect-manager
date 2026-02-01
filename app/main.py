@@ -880,6 +880,15 @@ async def tab_logs(request: Request):
     })
 
 
+@app.get("/api/tab/help", response_class=HTMLResponse)
+async def tab_help(request: Request):
+    """Return help tab content."""
+    return templates.TemplateResponse("partials/help.html", {
+        "request": request,
+        "api_host": state.api_host,
+    })
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

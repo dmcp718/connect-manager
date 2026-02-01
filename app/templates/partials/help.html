@@ -1,0 +1,168 @@
+<div class="help-container">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Getting started</h3>
+        </div>
+        <div class="card-body">
+            <div class="help-section">
+                <h4 class="help-heading">1. Connect to LucidLink</h4>
+                <ol class="help-list">
+                    <li>Go to the <strong>Settings</strong> tab</li>
+                    <li>Enter your LucidLink <strong>API Endpoint</strong> (e.g., <code>https://api.lucidlink.com/api/v1</code>)</li>
+                    <li>Paste your <strong>API Token</strong> (Bearer token from admin console)</li>
+                    <li>Click <strong>Load Filespaces</strong></li>
+                </ol>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">2. Create or select a DataStore</h4>
+                <p>A DataStore connects your LucidLink filespace to an S3 bucket.</p>
+                <ol class="help-list">
+                    <li>Select a <strong>Filespace</strong> from the dropdown</li>
+                    <li>DataStores will load automatically</li>
+                    <li>To create a new DataStore, click <strong>+ Create new</strong></li>
+                    <li>Fill in the required fields:
+                        <ul>
+                            <li><strong>Name</strong> - Unique identifier</li>
+                            <li><strong>Bucket</strong> - S3 bucket name</li>
+                            <li><strong>Region</strong> - AWS region (required)</li>
+                            <li><strong>Access Key / Secret Key</strong> - AWS credentials</li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">3. Browse and import files</h4>
+                <ol class="help-list">
+                    <li>Go to the <strong>Browser</strong> tab</li>
+                    <li>If this is your first time, enter AWS credentials when prompted</li>
+                    <li>Navigate through folders by clicking on them</li>
+                    <li>To import:
+                        <ul>
+                            <li><strong>Import</strong> - Import a single file immediately</li>
+                            <li><strong>+ Queue</strong> - Add a folder to the import queue</li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">4. Monitor progress</h4>
+                <ol class="help-list">
+                    <li>Go to the <strong>Jobs</strong> tab to see queued and running imports</li>
+                    <li>Each job shows:
+                        <ul>
+                            <li>Progress bar and percentage</li>
+                            <li>Files completed vs total</li>
+                            <li>Throughput (entries/second)</li>
+                        </ul>
+                    </li>
+                    <li>Use the <strong>Logs</strong> tab for detailed activity</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">DataStore management</h3>
+        </div>
+        <div class="card-body">
+            <div class="help-section">
+                <h4 class="help-heading">View DataStore info</h4>
+                <p>Click the <strong>Info</strong> button on any DataStore to see its configuration details including bucket, region, and URL expiration settings.</p>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">Delete a DataStore</h4>
+                <p>Click the <strong>Delete</strong> button to remove a DataStore from LucidLink. This will also remove any saved browsing credentials.</p>
+                <p class="help-warning">Warning: Deleting a DataStore does not delete the S3 bucket or its contents.</p>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">Saved DataStores</h4>
+                <p>DataStores with saved AWS credentials appear in the "Saved DataStores" section. These credentials are stored locally and allow you to browse the S3 bucket without re-entering them.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Import behavior</h3>
+        </div>
+        <div class="card-body">
+            <div class="help-section">
+                <h4 class="help-heading">File structure</h4>
+                <p>Imported files are placed in LucidLink at: <code>/&lt;bucket-name&gt;/&lt;original-path&gt;</code></p>
+                <p>Folder structure is automatically created as needed.</p>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">Re-importing files</h4>
+                <p>If you re-run an import on files that already exist in LucidLink, they will be counted as <strong>skipped</strong> (not errors). This allows you to safely re-run imports without duplicating data.</p>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">Parallel processing</h4>
+                <p>Import jobs run in parallel with multiple workers. Files within each job are also processed in batches for maximum throughput.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">API documentation</h3>
+        </div>
+        <div class="card-body">
+            <div class="help-section">
+                <p>Full API documentation is available via Swagger UI at your API endpoint:</p>
+                {% if api_host %}
+                <p>
+                    <a href="{{ api_host }}/docs" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+                        <img src="/static/img/icons/link.svg" alt="" class="icon icon-sm icon-white">
+                        Open API documentation
+                    </a>
+                </p>
+                <p class="help-hint">Opens: <code>{{ api_host }}/docs</code></p>
+                {% else %}
+                <p class="text-muted">Configure an API endpoint in Settings to access the documentation.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Troubleshooting</h3>
+        </div>
+        <div class="card-body">
+            <div class="help-section">
+                <h4 class="help-heading">Connection errors</h4>
+                <ul class="help-list">
+                    <li><strong>CONN_ERR</strong> - Cannot reach the API endpoint. Check the URL and network connectivity.</li>
+                    <li><strong>TIMEOUT</strong> - Request took too long. The API may be overloaded.</li>
+                    <li><strong>ERROR_401</strong> - Invalid or expired API token. Get a new token from the admin console.</li>
+                    <li><strong>ERROR_403</strong> - Permission denied. Check your API token permissions.</li>
+                </ul>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">S3 errors</h4>
+                <ul class="help-list">
+                    <li><strong>Access Denied</strong> - AWS credentials don't have permission to access the bucket.</li>
+                    <li><strong>NoSuchBucket</strong> - The bucket name is incorrect or doesn't exist.</li>
+                    <li><strong>InvalidAccessKeyId</strong> - The AWS access key is invalid.</li>
+                </ul>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">Import errors</h4>
+                <ul class="help-list">
+                    <li><strong>Already exists</strong> - File was already imported (counted as skipped).</li>
+                    <li><strong>Failed to create folder</strong> - Permission issue in LucidLink filespace.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>

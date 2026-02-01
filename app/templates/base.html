@@ -91,6 +91,16 @@
                 >
                     Logs
                 </button>
+                <button
+                    class="tab"
+                    :class="{ 'active': activeTab === 'help' }"
+                    @click="activeTab = 'help'"
+                    hx-get="/api/tab/help"
+                    hx-target="#tab-content"
+                    hx-swap="innerHTML"
+                >
+                    Help
+                </button>
             </div>
 
             <!-- Tab Content -->
