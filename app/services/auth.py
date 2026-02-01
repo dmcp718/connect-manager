@@ -204,13 +204,29 @@ def create_invite_user(email: str, is_admin: bool = False) -> Tuple[Optional[str
 
 
 def ensure_admin_exists() -> None:
-    """Ensure at least one admin user exists (for first-time setup)."""
+    """
+    Ensure at least one admin user exists (for first-time setup).
+
+    For production, set environment variables:
+      ADMIN_EMAIL=admin@example.com
+      ADMIN_PASSWORD=secure-password-here
+
+    If not set, defaults to admin@localhost / admin (dev only).
+    """
     if db.count_users() == 0:
-        # Create default admin
-        password_hash = hash_password("admin")
+        # Get admin credentials from environment or use defaults
+        admin_email = os.getenv("ADMIN_EMAIL", "admin@localhost")
+        admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+
+        password_hash = hash_password(admin_password)
         db.create_user(
-            email="admin@localhost",
+            email=admin_email,
             password_hash=password_hash,
             display_name="Admin",
             is_admin=True
         )
+
+        # Log warning if using default credentials
+        if admin_email == "admin@localhost" and admin_password == "admin":
+            import logging
+            logging.warning("Using default admin credentials - change immediately in production!")

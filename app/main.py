@@ -84,8 +84,15 @@ async def login_page(request: Request):
         from fastapi.responses import RedirectResponse
         return RedirectResponse(url="/", status_code=302)
 
+    # Only show default credentials hint if using defaults (dev mode)
+    show_default_hint = (
+        os.getenv("ADMIN_EMAIL", "admin@localhost") == "admin@localhost" and
+        os.getenv("ADMIN_PASSWORD", "admin") == "admin"
+    )
+
     return templates.TemplateResponse("login.html", {
         "request": request,
+        "show_default_hint": show_default_hint,
     })
 
 
