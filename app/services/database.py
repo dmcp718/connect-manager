@@ -86,10 +86,11 @@ def init_db() -> None:
     """)
 
     # DataStore credentials - stores S3 credentials for browsing DataStores
+    # user_id allows per-user isolation of credentials
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS datastore_credentials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            datastore_id TEXT UNIQUE NOT NULL,
+            datastore_id TEXT NOT NULL,
             datastore_name TEXT NOT NULL,
             filespace_id TEXT NOT NULL,
             filespace_name TEXT NOT NULL,
@@ -97,7 +98,9 @@ def init_db() -> None:
             region TEXT,
             endpoint TEXT,
             credentials_key TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            user_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(datastore_id, user_id)
         )
     """)
 
@@ -176,10 +179,13 @@ def init_db() -> None:
 
 
 def _migrate_add_user_id_columns(cursor) -> None:
-    """Add user_id columns to existing tables for multi-user support."""
+    """Add user_id columns to existing tables for multi-user support.
+
+    Note: For fresh multi-user deployments, these columns are already in the schema.
+    This migration handles upgrades from single-user to multi-user.
+    """
     tables_to_migrate = [
         "profiles",
-        "datastore_credentials",
         "sqs_credentials",
         "sqs_queues",
         "import_jobs",
@@ -343,17 +349,19 @@ def save_datastore_credentials(
     region: Optional[str],
     endpoint: Optional[str],
     credentials_key: str,
+    user_id: Optional[str] = None,
 ) -> int:
     """Save credentials for a DataStore (for S3 browsing)."""
     conn = get_connection()
     cursor = conn.cursor()
+    # Use composite key of datastore_id + user_id for uniqueness
     cursor.execute("""
         INSERT INTO datastore_credentials (
             datastore_id, datastore_name, filespace_id, filespace_name,
-            bucket_name, region, endpoint, credentials_key
+            bucket_name, region, endpoint, credentials_key, user_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(datastore_id) DO UPDATE SET
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(datastore_id, user_id) DO UPDATE SET
             datastore_name = excluded.datastore_name,
             filespace_id = excluded.filespace_id,
             filespace_name = excluded.filespace_name,
@@ -363,7 +371,7 @@ def save_datastore_credentials(
             credentials_key = excluded.credentials_key
     """, (
         datastore_id, datastore_name, filespace_id, filespace_name,
-        bucket_name, region, endpoint, credentials_key
+        bucket_name, region, endpoint, credentials_key, user_id
     ))
     conn.commit()
     row_id = cursor.lastrowid
@@ -371,40 +379,59 @@ def save_datastore_credentials(
     return row_id
 
 
-def get_datastore_credentials(datastore_id: str) -> Optional[Dict[str, Any]]:
-    """Get credentials for a specific DataStore."""
+def get_datastore_credentials(datastore_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Get credentials for a specific DataStore (filtered by user)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM datastore_credentials WHERE datastore_id = ?",
-        (datastore_id,)
-    )
+    if user_id:
+        cursor.execute(
+            "SELECT * FROM datastore_credentials WHERE datastore_id = ? AND user_id = ?",
+            (datastore_id, user_id)
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM datastore_credentials WHERE datastore_id = ?",
+            (datastore_id,)
+        )
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
 
 
-def get_all_datastore_credentials() -> List[Dict[str, Any]]:
-    """Get all stored DataStore credentials."""
+def get_all_datastore_credentials(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Get all stored DataStore credentials for a user."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT * FROM datastore_credentials
-        ORDER BY datastore_name
-    """)
+    if user_id:
+        cursor.execute("""
+            SELECT * FROM datastore_credentials
+            WHERE user_id = ?
+            ORDER BY datastore_name
+        """, (user_id,))
+    else:
+        cursor.execute("""
+            SELECT * FROM datastore_credentials
+            ORDER BY datastore_name
+        """)
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
 
-def delete_datastore_credentials(datastore_id: str) -> bool:
-    """Delete credentials for a DataStore."""
+def delete_datastore_credentials(datastore_id: str, user_id: Optional[str] = None) -> bool:
+    """Delete credentials for a DataStore (filtered by user)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "DELETE FROM datastore_credentials WHERE datastore_id = ?",
-        (datastore_id,)
-    )
+    if user_id:
+        cursor.execute(
+            "DELETE FROM datastore_credentials WHERE datastore_id = ? AND user_id = ?",
+            (datastore_id, user_id)
+        )
+    else:
+        cursor.execute(
+            "DELETE FROM datastore_credentials WHERE datastore_id = ?",
+            (datastore_id,)
+        )
     deleted = cursor.rowcount > 0
     conn.commit()
     conn.close()

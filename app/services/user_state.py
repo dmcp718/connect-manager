@@ -68,12 +68,9 @@ class UserSession:
         self.datastore_credentials.clear()
         self.s3_services.clear()
 
-        all_creds = db.get_all_datastore_credentials()
+        # Get only credentials for this user
+        all_creds = db.get_all_datastore_credentials(user_id=self.user_id)
         for cred in all_creds:
-            # Filter by user_id if set
-            if cred.get("user_id") and cred.get("user_id") != self.user_id:
-                continue
-
             datastore_id = cred["datastore_id"]
             self.datastore_credentials[datastore_id] = cred
             self._init_s3_service_for_datastore(cred)
@@ -104,8 +101,8 @@ class UserSession:
         if datastore_id in self.s3_services:
             return self.s3_services[datastore_id]
 
-        # Try to load from database
-        cred = db.get_datastore_credentials(datastore_id)
+        # Try to load from database (user-specific)
+        cred = db.get_datastore_credentials(datastore_id, user_id=self.user_id)
         if cred:
             self._init_s3_service_for_datastore(cred)
             self.datastore_credentials[datastore_id] = cred
@@ -134,7 +131,7 @@ class UserSession:
         credentials_key = secrets.generate_credentials_key()
         secrets.set_named_credentials(credentials_key, aws_access_key, aws_secret_key)
 
-        # Save to database with user_id
+        # Save to database with user_id for isolation
         db.save_datastore_credentials(
             datastore_id=datastore_id,
             datastore_name=datastore_name,
@@ -144,6 +141,7 @@ class UserSession:
             region=region,
             endpoint=endpoint,
             credentials_key=credentials_key,
+            user_id=self.user_id,
         )
 
         # Reload to update in-memory state
@@ -151,16 +149,16 @@ class UserSession:
         self.log(f"Saved DataStore '{datastore_name}' for browsing")
 
     def remove_datastore_credentials(self, datastore_id: str) -> bool:
-        """Remove DataStore credentials."""
-        cred = db.get_datastore_credentials(datastore_id)
+        """Remove DataStore credentials for this user."""
+        cred = db.get_datastore_credentials(datastore_id, user_id=self.user_id)
         if cred:
             # Delete credentials from keyring
             credentials_key = cred.get("credentials_key")
             if credentials_key:
                 secrets.delete_named_credentials(credentials_key)
 
-            # Delete from database
-            if db.delete_datastore_credentials(datastore_id):
+            # Delete from database (user-specific)
+            if db.delete_datastore_credentials(datastore_id, user_id=self.user_id):
                 # Remove from in-memory state
                 if datastore_id in self.s3_services:
                     del self.s3_services[datastore_id]

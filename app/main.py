@@ -247,8 +247,9 @@ async def connect(
         if not filespace_id:
             raise ValueError("Please select a filespace first")
 
-        # Check if we already have credentials for this DataStore
-        existing_creds = db.get_datastore_credentials(datastore_id)
+        # Check if we already have credentials for this DataStore (user-specific)
+        user_id = getattr(request.state, "user_id", None)
+        existing_creds = db.get_datastore_credentials(datastore_id, user_id=user_id)
         if existing_creds:
             # Already have credentials - go directly to browser
             state.selected_datastore = datastore
