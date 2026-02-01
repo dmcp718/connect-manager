@@ -21,7 +21,24 @@
             User created
         </div>
 
-        <div class="credentials-box">
+        <div class="credentials-box" x-data="{ copied: false }">
+            <button
+                class="copy-btn"
+                title="Copy credentials"
+                @click="
+                    navigator.clipboard.writeText('Email: {{ email }}\nPassword: {{ temp_password }}');
+                    copied = true;
+                    setTimeout(() => copied = false, 2000);
+                "
+            >
+                <svg x-show="!copied" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <svg x-show="copied" x-cloak width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+            </button>
             <p>Share these credentials with the new user:</p>
             <div class="credential-row">
                 <label>Email</label>
@@ -81,11 +98,35 @@
     }
 
     .credentials-box {
+        position: relative;
         background: var(--color-charcoal);
         border: 1px solid var(--color-gray-70);
         border-radius: var(--radius-md);
         padding: 1.25rem;
         margin: 1.5rem 0;
+    }
+
+    .copy-btn {
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        background: var(--color-gray-80);
+        border: 1px solid var(--color-gray-70);
+        border-radius: var(--radius-sm);
+        color: var(--color-gray-40);
+        cursor: pointer;
+        transition: all 150ms ease;
+    }
+
+    .copy-btn:hover {
+        background: var(--color-gray-70);
+        color: var(--color-neon);
+        border-color: var(--color-neon);
     }
 
     .credentials-box p {
