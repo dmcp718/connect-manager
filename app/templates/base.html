@@ -35,6 +35,12 @@
     <!-- HTMX -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/sse.js"></script>
+    <script>
+        // Ensure HTMX sends credentials (cookies) with all requests
+        document.addEventListener('htmx:configRequest', function(evt) {
+            evt.detail.withCredentials = true;
+        });
+    </script>
 
     <!-- Alpine.js for minor interactivity -->
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
