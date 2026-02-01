@@ -67,7 +67,7 @@
 
         <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="closeModal()">Cancel</button>
-            <button type="submit" class="btn btn-neon">Send invite</button>
+            <button type="submit" class="btn btn-primary">Send invite</button>
         </div>
     </form>
     {% endif %}
@@ -90,11 +90,13 @@
 
     .credentials-box p {
         margin: 0 0 1rem 0;
+        color: var(--color-gray-30);
     }
 
     .credentials-box p.text-muted {
         margin: 1rem 0 0 0;
         font-size: 0.8rem;
+        color: var(--color-gray-50);
     }
 
     .credential-row {
@@ -109,16 +111,19 @@
     }
 
     .credential-row label {
-        font-size: 0.75rem;
-        color: var(--color-gray-40);
+        font-size: 0.6875rem;
+        font-weight: 600;
+        color: var(--color-gray-50);
         text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .credential-row code {
-        font-family: monospace;
-        font-size: 1rem;
-        padding: 0.5rem 0.75rem;
+        font-family: 'SF Mono', Monaco, monospace;
+        font-size: 0.9375rem;
+        padding: 0.625rem 0.875rem;
         background: var(--color-gray-90);
+        border: 1px solid var(--color-gray-70);
         border-radius: var(--radius-sm);
         color: var(--color-neon);
     }
@@ -129,15 +134,17 @@
     }
 
     .checkbox-label {
-        display: flex;
+        display: inline-flex;
         align-items: center;
         gap: 0.5rem;
         cursor: pointer;
+        color: var(--color-white);
     }
 
     .checkbox-label input[type="checkbox"] {
-        width: 18px;
-        height: 18px;
+        width: 16px;
+        height: 16px;
         accent-color: var(--color-neon);
+        cursor: pointer;
     }
 </style>
