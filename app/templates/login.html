@@ -117,6 +117,17 @@
             color: var(--color-text-muted);
         }
 
+        /* Override browser autofill styles */
+        .login-form input:-webkit-autofill,
+        .login-form input:-webkit-autofill:hover,
+        .login-form input:-webkit-autofill:focus,
+        .login-form input:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 30px var(--color-charcoal) inset !important;
+            -webkit-text-fill-color: var(--color-text) !important;
+            caret-color: var(--color-text);
+            transition: background-color 5000s ease-in-out 0s;
+        }
+
         .login-btn {
             margin-top: 0.5rem;
             padding: 0.875rem 1.5rem;
