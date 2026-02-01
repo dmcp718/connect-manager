@@ -144,19 +144,33 @@
                 <h3 class="card-title">User management</h3>
                 <span class="badge badge-count">{{ users|length }}</span>
             </div>
-            <button
-                class="btn btn-neon"
-                hx-get="/api/auth/invite-modal"
-                hx-target="#modal-container"
-                hx-swap="innerHTML"
-                @click="openModal()"
-            >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-                Add user
-            </button>
+            <div class="card-header-actions">
+                <button
+                    class="btn btn-secondary btn-sm"
+                    hx-get="/api/tab/account"
+                    hx-target="#tab-content"
+                    hx-swap="innerHTML"
+                    title="Refresh user list"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                </button>
+                <button
+                    class="btn btn-neon"
+                    hx-get="/api/auth/invite-modal"
+                    hx-target="#modal-container"
+                    hx-swap="innerHTML"
+                    @click="openModal()"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Add user
+                </button>
+            </div>
         </div>
 
         {% if error %}
@@ -449,6 +463,12 @@
 }
 
 .card-header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.card-header-actions {
     display: flex;
     align-items: center;
     gap: var(--space-sm);
