@@ -889,6 +889,400 @@ async def tab_help(request: Request):
     })
 
 
+# ============== SQS Event Stream API ==============
+
+@app.get("/api/tab/sqs", response_class=HTMLResponse)
+async def tab_sqs(request: Request):
+    """Return SQS tab content."""
+    from services import secrets as sec
+
+    sqs_credentials = db.get_sqs_credentials()
+    sqs_queues = db.list_sqs_queues()
+    sqs_events = db.list_sqs_events(limit=20)
+    browsable_datastores = state.get_browsable_datastores()
+
+    # Get event count for each queue and add datastore names
+    for queue in sqs_queues:
+        queue["events_today"] = db.get_sqs_event_count_today(queue["id"])
+        # Look up datastore name
+        ds_cred = db.get_datastore_credentials(queue["datastore_id"])
+        if ds_cred:
+            queue["datastore_name"] = ds_cred.get("datastore_name", "")
+            queue["filespace_name"] = ds_cred.get("filespace_name", "")
+
+    return templates.TemplateResponse("partials/sqs_tab.html", {
+        "request": request,
+        "sqs_credentials": sqs_credentials,
+        "sqs_queues": sqs_queues,
+        "sqs_events": sqs_events,
+        "browsable_datastores": browsable_datastores,
+    })
+
+
+@app.post("/api/sqs/credentials", response_class=HTMLResponse)
+async def save_sqs_credentials(
+    request: Request,
+    access_key: str = Form(...),
+    secret_key: Optional[str] = Form(None),
+):
+    """Save SQS IAM credentials."""
+    from services import secrets as sec
+    import uuid
+
+    try:
+        # Get existing credentials if updating
+        existing = db.get_sqs_credentials()
+
+        # If no new secret key provided, keep the existing one
+        if not secret_key and existing:
+            secret_key_ref = existing.get("secret_key_encrypted")
+        else:
+            if not secret_key:
+                raise ValueError("Secret key is required")
+            # Generate a unique reference key and store the actual secret
+            secret_key_ref = uuid.uuid4().hex[:12]
+            sec.set_secret(f"sqs_secret_{secret_key_ref}", secret_key)
+
+        # Save to database (region defaults to us-east-1, actual region determined per-queue)
+        region = "us-east-1"
+        db.save_sqs_credentials(access_key, secret_key_ref, region)
+        state.log("SQS credentials saved")
+
+        # Return the queue list section
+        sqs_queues = db.list_sqs_queues()
+        browsable_datastores = state.get_browsable_datastores()
+
+        for queue in sqs_queues:
+            queue["events_today"] = db.get_sqs_event_count_today(queue["id"])
+            ds_cred = db.get_datastore_credentials(queue["datastore_id"])
+            if ds_cred:
+                queue["datastore_name"] = ds_cred.get("datastore_name", "")
+
+        return templates.TemplateResponse("partials/sqs_queue_list.html", {
+            "request": request,
+            "sqs_credentials": db.get_sqs_credentials(),
+            "sqs_queues": sqs_queues,
+            "browsable_datastores": browsable_datastores,
+        })
+
+    except Exception as e:
+        state.log(f"Failed to save SQS credentials: {e}")
+        return templates.TemplateResponse("partials/sqs_queue_list.html", {
+            "request": request,
+            "sqs_credentials": db.get_sqs_credentials(),
+            "sqs_queues": [],
+            "browsable_datastores": state.get_browsable_datastores(),
+            "error": str(e),
+        })
+
+
+@app.delete("/api/sqs/credentials", response_class=HTMLResponse)
+async def delete_sqs_credentials(request: Request):
+    """Delete SQS credentials."""
+    from services import secrets as sec
+
+    # Get existing to clean up the secret
+    existing = db.get_sqs_credentials()
+    if existing:
+        secret_key_ref = existing.get("secret_key_encrypted")
+        if secret_key_ref:
+            sec.delete_secret(f"sqs_secret_{secret_key_ref}")
+
+    db.delete_sqs_credentials()
+    state.log("SQS credentials removed")
+
+    return await tab_sqs(request)
+
+
+@app.get("/api/sqs/queues/add-modal", response_class=HTMLResponse)
+async def sqs_add_queue_modal(request: Request):
+    """Show modal for adding a new SQS queue."""
+    browsable_datastores = state.get_browsable_datastores()
+
+    return templates.TemplateResponse("partials/sqs_queue_modal.html", {
+        "request": request,
+        "browsable_datastores": browsable_datastores,
+    })
+
+
+@app.post("/api/sqs/queues", response_class=HTMLResponse)
+async def add_sqs_queue(
+    request: Request,
+    mode: str = Form("create"),
+    queue_name: Optional[str] = Form(None),
+    queue_url: Optional[str] = Form(None),
+    queue_region: str = Form("us-east-1"),
+    datastore_id: str = Form(...),
+    import_prefix: str = Form(""),
+    configure_s3_policy: Optional[str] = Form(None),
+):
+    """Add or create a new SQS queue configuration."""
+    from services import secrets as sec
+    from services.sqs_service import SQSService, SQSError
+    import uuid
+
+    browsable_datastores = state.get_browsable_datastores()
+
+    try:
+        # Get SQS credentials
+        sqs_creds = db.get_sqs_credentials()
+        if not sqs_creds:
+            raise ValueError("SQS credentials not configured")
+
+        access_key = sqs_creds.get("access_key")
+        secret_key_ref = sqs_creds.get("secret_key_encrypted")
+        secret_key = sec.get_secret(f"sqs_secret_{secret_key_ref}")
+
+        if not access_key or not secret_key:
+            raise ValueError("Invalid SQS credentials")
+
+        # Get DataStore credentials to validate and get bucket name
+        ds_cred = db.get_datastore_credentials(datastore_id)
+        if not ds_cred:
+            raise ValueError("DataStore credentials not found. Please add credentials in Settings first.")
+
+        filespace_id = ds_cred.get("filespace_id", "")
+        bucket_name = ds_cred.get("bucket_name", "")
+
+        if mode == "create":
+            # Use selected region for new queue
+            region = queue_region
+        else:
+            # For existing queues, use default - region will be extracted from URL/ARN
+            region = "us-east-1"
+
+        # Initialize SQS service with appropriate region
+        sqs = SQSService(access_key, secret_key, region)
+
+        if mode == "create":
+            # Create a new queue
+            if not queue_name:
+                raise ValueError("Queue name is required")
+
+            # Validate queue name
+            import re
+            if not re.match(r'^[a-zA-Z0-9_-]+$', queue_name):
+                raise ValueError("Queue name can only contain alphanumeric characters, hyphens, and underscores")
+
+            queue_info = sqs.create_queue(queue_name)
+            state.log(f"Created SQS queue '{queue_name}' in AWS ({region})")
+
+            # Configure queue policy and S3 bucket notifications
+            if configure_s3_policy == "true" and bucket_name:
+                # 1. Set queue policy to allow S3 to send messages
+                sqs.configure_queue_for_s3(queue_info["url"], bucket_name)
+                state.log(f"Configured queue policy for S3 bucket '{bucket_name}'")
+
+                # 2. Configure S3 bucket to send notifications to the queue
+                from services.sqs_service import S3NotificationService, S3NotificationError
+                s3_notif = S3NotificationService(access_key, secret_key, region)
+                try:
+                    s3_notif.add_sqs_notification(
+                        bucket_name=bucket_name,
+                        queue_arn=queue_info["arn"],
+                        notification_id=f"LucidLink-{queue_name}",
+                    )
+                    state.log(f"Configured S3 bucket '{bucket_name}' to send events to queue")
+                except S3NotificationError as e:
+                    # Queue created but S3 notification failed - still save the queue
+                    state.log(f"Warning: Could not configure S3 notifications: {e}")
+
+        else:
+            # Use existing queue
+            if not queue_url:
+                raise ValueError("Queue URL or ARN is required")
+
+            # Normalize URL input (could be ARN or URL)
+            normalized_url = SQSService.normalize_queue_input(queue_url)
+            if not normalized_url:
+                raise ValueError("Invalid queue URL or ARN format")
+
+            # Validate queue and get info
+            queue_info = sqs.validate_queue_url(normalized_url)
+
+        # Create queue record
+        queue_id = uuid.uuid4().hex[:12]
+        db.create_sqs_queue(
+            queue_id=queue_id,
+            queue_url=queue_info["url"],
+            queue_arn=queue_info["arn"],
+            name=queue_info["name"],
+            region=queue_info["region"],
+            datastore_id=datastore_id,
+            filespace_id=filespace_id,
+            import_prefix=import_prefix.strip(),
+        )
+
+        action = "created" if mode == "create" else "added"
+        state.log(f"SQS queue '{queue_info['name']}' {action} for automatic imports")
+
+        # Return updated queue list
+        sqs_queues = db.list_sqs_queues()
+        for queue in sqs_queues:
+            queue["events_today"] = db.get_sqs_event_count_today(queue["id"])
+            cred = db.get_datastore_credentials(queue["datastore_id"])
+            if cred:
+                queue["datastore_name"] = cred.get("datastore_name", "")
+
+        return templates.TemplateResponse("partials/sqs_queue_list.html", {
+            "request": request,
+            "sqs_credentials": sqs_creds,
+            "sqs_queues": sqs_queues,
+            "browsable_datastores": browsable_datastores,
+            "success": f"Queue '{queue_info['name']}' {action} successfully",
+        })
+
+    except SQSError as e:
+        return templates.TemplateResponse("partials/sqs_queue_modal.html", {
+            "request": request,
+            "browsable_datastores": browsable_datastores,
+            "error": f"SQS error: {e}",
+        })
+    except Exception as e:
+        return templates.TemplateResponse("partials/sqs_queue_modal.html", {
+            "request": request,
+            "browsable_datastores": browsable_datastores,
+            "error": str(e),
+        })
+
+
+@app.delete("/api/sqs/queues/{queue_id}", response_class=HTMLResponse)
+async def delete_sqs_queue(request: Request, queue_id: str):
+    """Delete an SQS queue configuration."""
+    queue = db.get_sqs_queue(queue_id)
+    queue_name = queue.get("name", queue_id) if queue else queue_id
+
+    db.delete_sqs_queue(queue_id)
+    state.log(f"SQS queue '{queue_name}' deleted")
+
+    # Return updated queue list
+    sqs_queues = db.list_sqs_queues()
+    browsable_datastores = state.get_browsable_datastores()
+
+    for q in sqs_queues:
+        q["events_today"] = db.get_sqs_event_count_today(q["id"])
+        cred = db.get_datastore_credentials(q["datastore_id"])
+        if cred:
+            q["datastore_name"] = cred.get("datastore_name", "")
+
+    return templates.TemplateResponse("partials/sqs_queue_list.html", {
+        "request": request,
+        "sqs_credentials": db.get_sqs_credentials(),
+        "sqs_queues": sqs_queues,
+        "browsable_datastores": browsable_datastores,
+        "success": f"Queue '{queue_name}' deleted",
+    })
+
+
+@app.post("/api/sqs/queues/{queue_id}/pause", response_class=HTMLResponse)
+async def pause_sqs_queue(request: Request, queue_id: str):
+    """Pause polling for a queue."""
+    db.update_sqs_queue(queue_id, status="paused")
+
+    queue = db.get_sqs_queue(queue_id)
+    queue_name = queue.get("name", queue_id) if queue else queue_id
+    state.log(f"SQS queue '{queue_name}' paused")
+
+    # Return updated queue list
+    sqs_queues = db.list_sqs_queues()
+    browsable_datastores = state.get_browsable_datastores()
+
+    for q in sqs_queues:
+        q["events_today"] = db.get_sqs_event_count_today(q["id"])
+        cred = db.get_datastore_credentials(q["datastore_id"])
+        if cred:
+            q["datastore_name"] = cred.get("datastore_name", "")
+
+    return templates.TemplateResponse("partials/sqs_queue_list.html", {
+        "request": request,
+        "sqs_credentials": db.get_sqs_credentials(),
+        "sqs_queues": sqs_queues,
+        "browsable_datastores": browsable_datastores,
+    })
+
+
+@app.post("/api/sqs/queues/{queue_id}/resume", response_class=HTMLResponse)
+async def resume_sqs_queue(request: Request, queue_id: str):
+    """Resume polling for a queue."""
+    db.update_sqs_queue(queue_id, status="active", error_message="")
+
+    queue = db.get_sqs_queue(queue_id)
+    queue_name = queue.get("name", queue_id) if queue else queue_id
+    state.log(f"SQS queue '{queue_name}' resumed")
+
+    # Return updated queue list
+    sqs_queues = db.list_sqs_queues()
+    browsable_datastores = state.get_browsable_datastores()
+
+    for q in sqs_queues:
+        q["events_today"] = db.get_sqs_event_count_today(q["id"])
+        cred = db.get_datastore_credentials(q["datastore_id"])
+        if cred:
+            q["datastore_name"] = cred.get("datastore_name", "")
+
+    return templates.TemplateResponse("partials/sqs_queue_list.html", {
+        "request": request,
+        "sqs_credentials": db.get_sqs_credentials(),
+        "sqs_queues": sqs_queues,
+        "browsable_datastores": browsable_datastores,
+    })
+
+
+@app.get("/api/sqs/queues/{queue_id}/info", response_class=HTMLResponse)
+async def sqs_queue_info(request: Request, queue_id: str):
+    """Get queue details and statistics."""
+    from services import secrets as sec
+    from services.sqs_service import SQSService, SQSError
+
+    queue = db.get_sqs_queue(queue_id)
+    if not queue:
+        return templates.TemplateResponse("partials/sqs_queue_info.html", {
+            "request": request,
+            "error": "Queue not found",
+        })
+
+    # Add event count
+    queue["events_today"] = db.get_sqs_event_count_today(queue_id)
+
+    # Add datastore name
+    cred = db.get_datastore_credentials(queue["datastore_id"])
+    if cred:
+        queue["datastore_name"] = cred.get("datastore_name", "")
+        queue["filespace_name"] = cred.get("filespace_name", "")
+
+    # Try to get current queue stats from AWS
+    try:
+        sqs_creds = db.get_sqs_credentials()
+        if sqs_creds:
+            access_key = sqs_creds.get("access_key")
+            secret_key_ref = sqs_creds.get("secret_key_encrypted")
+            secret_key = sec.get_secret(f"sqs_secret_{secret_key_ref}")
+            region = sqs_creds.get("region", "us-east-1")
+
+            if access_key and secret_key:
+                sqs = SQSService(access_key, secret_key, region)
+                attrs = sqs.get_queue_attributes(queue["queue_url"])
+                queue["approximate_messages"] = attrs.get("ApproximateNumberOfMessages", "0")
+    except Exception:
+        pass  # Ignore errors fetching queue stats
+
+    return templates.TemplateResponse("partials/sqs_queue_info.html", {
+        "request": request,
+        "queue": queue,
+    })
+
+
+@app.get("/api/sqs/events", response_class=HTMLResponse)
+async def list_sqs_events(request: Request, limit: int = 50):
+    """List recent SQS events."""
+    events = db.list_sqs_events(limit=limit)
+
+    return templates.TemplateResponse("partials/sqs_events.html", {
+        "request": request,
+        "sqs_events": events,
+    })
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

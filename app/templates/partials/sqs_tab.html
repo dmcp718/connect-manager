@@ -1,0 +1,119 @@
+<div class="sqs-container"
+     hx-get="/api/tab/sqs"
+     hx-trigger="every 30s"
+     hx-swap="outerHTML">
+
+    <!-- SQS Credentials Card -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-icon"><img src="/static/img/icons/inbox.svg" alt=""></span>
+            <h3 class="card-title">AWS credentials (SQS)</h3>
+        </div>
+        <div class="card-body">
+            <p class="text-muted" style="margin-bottom: var(--space-md); font-size: 0.875rem;">
+                Configure IAM credentials with SQS read permissions for event-driven imports.
+            </p>
+
+            <form class="sqs-credentials-form"
+                  hx-post="/api/sqs/credentials"
+                  hx-target="#sqs-queues-section"
+                  hx-swap="outerHTML">
+
+                <div class="form-row">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" for="sqs_access_key">
+                            Access key{% if sqs_credentials %} <span class="text-success">(saved)</span>{% endif %}
+                        </label>
+                        <input
+                            type="text"
+                            id="sqs_access_key"
+                            name="access_key"
+                            class="form-input"
+                            value="{{ sqs_credentials.access_key if sqs_credentials else '' }}"
+                            placeholder="AKIAIOSFODNN7EXAMPLE"
+                            required
+                        >
+                    </div>
+                </div>
+
+                <div class="form-group" x-data="{ show: false }">
+                    <label class="form-label" for="sqs_secret_key">Secret key</label>
+                    <div class="input-password">
+                        <input
+                            :type="show ? 'text' : 'password'"
+                            id="sqs_secret_key"
+                            name="secret_key"
+                            class="form-input"
+                            placeholder="{% if sqs_credentials %}(unchanged){% else %}wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY{% endif %}"
+                            {% if not sqs_credentials %}required{% endif %}
+                        >
+                        <button type="button" class="btn-eye" @click="show = !show" :title="show ? 'Hide' : 'Show'">
+                            <svg x-show="!show" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            <svg x-show="show" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div style="margin-top: var(--space-md);">
+                    <button type="submit" class="btn btn-primary">
+                        Save credentials
+                    </button>
+                    {% if sqs_credentials %}
+                    <button
+                        type="button"
+                        class="btn btn-ghost"
+                        hx-delete="/api/sqs/credentials"
+                        hx-target="#tab-content"
+                        hx-swap="innerHTML"
+                        hx-confirm="Remove SQS credentials? All queue configurations will stop polling."
+                    >
+                        Remove
+                    </button>
+                    {% endif %}
+                </div>
+
+                <div id="sqs-creds-indicator" class="htmx-indicator">
+                    <span class="spinner"></span> Saving...
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Configured Queues Section -->
+    <div id="sqs-queues-section">
+        {% include "partials/sqs_queue_list.html" %}
+    </div>
+
+    <!-- Recent Events Section -->
+    {% if sqs_events %}
+    <div class="card sqs-events">
+        <div class="card-header">
+            <h3 class="card-title">Recent events</h3>
+        </div>
+        <div class="card-body" style="padding: 0;">
+            <div class="sqs-events-list">
+                {% for event in sqs_events %}
+                <div class="sqs-event-row">
+                    <span class="sqs-event-time">{{ event.created_at.split('T')[1][:8] if 'T' in event.created_at else event.created_at[-8:] }}</span>
+                    <span class="sqs-event-type">{{ event.event_type.split(':')[-1] if ':' in event.event_type else event.event_type }}</span>
+                    <span class="sqs-event-path" title="{{ event.bucket }}/{{ event.object_key }}">{{ event.bucket }}/{{ event.object_key }}</span>
+                    <span class="sqs-event-status {{ event.status }}" title="{{ event.status }}">
+                        {% if event.status == 'completed' %}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        {% elif event.status == 'pending' %}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        {% elif event.status == 'processing' %}
+                        <span class="spinner" style="width: 14px; height: 14px;"></span>
+                        {% elif event.status == 'failed' %}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        {% elif event.status == 'skipped' %}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path></svg>
+                        {% endif %}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>

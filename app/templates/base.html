@@ -83,6 +83,16 @@
                 </button>
                 <button
                     class="tab"
+                    :class="{ 'active': activeTab === 'sqs' }"
+                    @click="activeTab = 'sqs'"
+                    hx-get="/api/tab/sqs"
+                    hx-target="#tab-content"
+                    hx-swap="innerHTML"
+                >
+                    AWS SQS
+                </button>
+                <button
+                    class="tab"
                     :class="{ 'active': activeTab === 'logs' }"
                     @click="activeTab = 'logs'"
                     hx-get="/api/tab/logs"

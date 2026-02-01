@@ -93,6 +93,54 @@ def init_db() -> None:
         )
     """)
 
+    # SQS Credentials - stores IAM credentials for SQS access
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sqs_credentials (
+            id INTEGER PRIMARY KEY,
+            access_key TEXT NOT NULL,
+            secret_key_encrypted TEXT NOT NULL,
+            region TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # SQS Queues - configured queues for event-driven imports
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sqs_queues (
+            id TEXT PRIMARY KEY,
+            queue_url TEXT NOT NULL,
+            queue_arn TEXT,
+            name TEXT NOT NULL,
+            region TEXT NOT NULL,
+            datastore_id TEXT NOT NULL,
+            filespace_id TEXT NOT NULL,
+            import_prefix TEXT DEFAULT '',
+            status TEXT DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_poll_at TIMESTAMP,
+            error_message TEXT
+        )
+    """)
+
+    # SQS Events - tracked S3 events from SQS
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sqs_events (
+            id TEXT PRIMARY KEY,
+            queue_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            bucket TEXT NOT NULL,
+            object_key TEXT NOT NULL,
+            object_size INTEGER,
+            event_time TIMESTAMP,
+            status TEXT DEFAULT 'pending',
+            job_id TEXT,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (queue_id) REFERENCES sqs_queues(id)
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -459,6 +507,254 @@ def clear_completed_jobs() -> int:
         DELETE FROM import_jobs
         WHERE status IN ('completed', 'failed', 'cancelled')
     """)
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+# ============== SQS Credentials ==============
+
+def save_sqs_credentials(access_key: str, secret_key_encrypted: str, region: str) -> None:
+    """Save SQS IAM credentials (single row, replaces existing)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Delete existing and insert new
+    cursor.execute("DELETE FROM sqs_credentials")
+    cursor.execute("""
+        INSERT INTO sqs_credentials (id, access_key, secret_key_encrypted, region)
+        VALUES (1, ?, ?, ?)
+    """, (access_key, secret_key_encrypted, region))
+    conn.commit()
+    conn.close()
+
+
+def get_sqs_credentials() -> Optional[Dict[str, Any]]:
+    """Get stored SQS credentials."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM sqs_credentials WHERE id = 1")
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_sqs_credentials() -> bool:
+    """Delete SQS credentials."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM sqs_credentials")
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+# ============== SQS Queues ==============
+
+def create_sqs_queue(
+    queue_id: str,
+    queue_url: str,
+    queue_arn: Optional[str],
+    name: str,
+    region: str,
+    datastore_id: str,
+    filespace_id: str,
+    import_prefix: str = "",
+) -> str:
+    """Create a new SQS queue configuration."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO sqs_queues (id, queue_url, queue_arn, name, region, datastore_id, filespace_id, import_prefix)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (queue_id, queue_url, queue_arn, name, region, datastore_id, filespace_id, import_prefix))
+    conn.commit()
+    conn.close()
+    return queue_id
+
+
+def get_sqs_queue(queue_id: str) -> Optional[Dict[str, Any]]:
+    """Get an SQS queue by ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM sqs_queues WHERE id = ?", (queue_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def list_sqs_queues() -> List[Dict[str, Any]]:
+    """List all SQS queues."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM sqs_queues ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def list_active_sqs_queues() -> List[Dict[str, Any]]:
+    """List only active SQS queues (for polling)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM sqs_queues WHERE status = 'active' ORDER BY created_at")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def update_sqs_queue(
+    queue_id: str,
+    status: Optional[str] = None,
+    last_poll_at: bool = False,
+    error_message: Optional[str] = None,
+) -> bool:
+    """Update an SQS queue."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    updates = []
+    params = []
+
+    if status is not None:
+        updates.append("status = ?")
+        params.append(status)
+
+    if last_poll_at:
+        updates.append("last_poll_at = CURRENT_TIMESTAMP")
+
+    if error_message is not None:
+        updates.append("error_message = ?")
+        params.append(error_message if error_message else None)
+
+    if updates:
+        params.append(queue_id)
+        cursor.execute(
+            f"UPDATE sqs_queues SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+
+    updated = cursor.rowcount > 0
+    conn.close()
+    return updated
+
+
+def delete_sqs_queue(queue_id: str) -> bool:
+    """Delete an SQS queue configuration."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    # First delete associated events
+    cursor.execute("DELETE FROM sqs_events WHERE queue_id = ?", (queue_id,))
+    # Then delete the queue
+    cursor.execute("DELETE FROM sqs_queues WHERE id = ?", (queue_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+# ============== SQS Events ==============
+
+def create_sqs_event(
+    event_id: str,
+    queue_id: str,
+    message_id: str,
+    event_type: str,
+    bucket: str,
+    object_key: str,
+    object_size: Optional[int],
+    event_time: Optional[str],
+) -> str:
+    """Create a new SQS event record."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO sqs_events (id, queue_id, message_id, event_type, bucket, object_key, object_size, event_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (event_id, queue_id, message_id, event_type, bucket, object_key, object_size, event_time))
+    conn.commit()
+    conn.close()
+    return event_id
+
+
+def update_sqs_event(
+    event_id: str,
+    status: Optional[str] = None,
+    job_id: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> bool:
+    """Update an SQS event."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    updates = []
+    params = []
+
+    if status is not None:
+        updates.append("status = ?")
+        params.append(status)
+
+    if job_id is not None:
+        updates.append("job_id = ?")
+        params.append(job_id)
+
+    if error_message is not None:
+        updates.append("error_message = ?")
+        params.append(error_message if error_message else None)
+
+    if updates:
+        params.append(event_id)
+        cursor.execute(
+            f"UPDATE sqs_events SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+
+    updated = cursor.rowcount > 0
+    conn.close()
+    return updated
+
+
+def list_sqs_events(limit: int = 50) -> List[Dict[str, Any]]:
+    """List recent SQS events."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT e.*, q.name as queue_name
+        FROM sqs_events e
+        LEFT JOIN sqs_queues q ON e.queue_id = q.id
+        ORDER BY e.created_at DESC
+        LIMIT ?
+    """, (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_sqs_event_count_today(queue_id: str) -> int:
+    """Get count of events for a queue today."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT COUNT(*) as count
+        FROM sqs_events
+        WHERE queue_id = ? AND date(created_at) = date('now')
+    """, (queue_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row["count"] if row else 0
+
+
+def clear_old_sqs_events(days: int = 7) -> int:
+    """Clear SQS events older than specified days."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        DELETE FROM sqs_events
+        WHERE created_at < datetime('now', '-' || ? || ' days')
+    """, (days,))
     deleted = cursor.rowcount
     conn.commit()
     conn.close()

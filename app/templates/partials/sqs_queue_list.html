@@ -1,0 +1,132 @@
+{% if sqs_credentials %}
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Configured queues</h3>
+        <button
+            class="btn btn-primary btn-sm"
+            hx-get="/api/sqs/queues/add-modal"
+            hx-target="#modal-container"
+            hx-swap="innerHTML"
+            style="margin-left: auto;"
+        >
+            <img src="/static/img/icons/plus.svg" alt="" class="icon icon-sm" style="filter: none;">
+            Add queue
+        </button>
+    </div>
+    <div class="card-body">
+        {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+        {% endif %}
+
+        {% if success %}
+        <div class="alert alert-success">{{ success }}</div>
+        {% endif %}
+
+        {% if sqs_queues %}
+        <div class="sqs-queue-list">
+            {% for queue in sqs_queues %}
+            <div class="sqs-queue-card {% if queue.status == 'paused' %}paused{% endif %} {% if queue.error_message %}error{% endif %}">
+                <div class="sqs-queue-card-header">
+                    <div class="sqs-queue-card-info">
+                        <div class="sqs-queue-name">{{ queue.name }}</div>
+                        <div class="sqs-queue-arn">{{ queue.queue_arn or queue.queue_url }}</div>
+                    </div>
+                    <div class="sqs-queue-card-actions">
+                        {% if queue.status == 'active' %}
+                        <button
+                            class="btn btn-ghost btn-sm"
+                            hx-post="/api/sqs/queues/{{ queue.id }}/pause"
+                            hx-target="#sqs-queues-section"
+                            hx-swap="outerHTML"
+                            title="Pause polling"
+                        >
+                            <img src="/static/img/icons/pause.svg" alt="Pause" class="icon icon-sm icon-muted">
+                        </button>
+                        {% else %}
+                        <button
+                            class="btn btn-ghost btn-sm"
+                            hx-post="/api/sqs/queues/{{ queue.id }}/resume"
+                            hx-target="#sqs-queues-section"
+                            hx-swap="outerHTML"
+                            title="Resume polling"
+                        >
+                            <img src="/static/img/icons/play.svg" alt="Resume" class="icon icon-sm icon-neon">
+                        </button>
+                        {% endif %}
+                        <button
+                            class="btn btn-ghost btn-sm"
+                            hx-get="/api/sqs/queues/{{ queue.id }}/info"
+                            hx-target="#modal-container"
+                            hx-swap="innerHTML"
+                            title="Queue info"
+                        >
+                            <img src="/static/img/icons/info.svg" alt="Info" class="icon icon-sm icon-muted">
+                        </button>
+                        <button
+                            class="btn btn-ghost btn-sm"
+                            hx-delete="/api/sqs/queues/{{ queue.id }}"
+                            hx-target="#sqs-queues-section"
+                            hx-swap="outerHTML"
+                            hx-confirm="Delete queue '{{ queue.name }}'? This will stop event-driven imports for this queue."
+                            title="Delete queue"
+                        >
+                            <img src="/static/img/icons/trash.svg" alt="Delete" class="icon icon-sm icon-muted">
+                        </button>
+                    </div>
+                </div>
+                <div class="sqs-queue-card-meta">
+                    <span class="sqs-queue-meta-item">
+                        <span class="sqs-status-badge {{ queue.status }}">
+                            <span class="sqs-status-dot"></span>
+                            {{ queue.status }}
+                        </span>
+                    </span>
+                    <span class="sqs-queue-meta-item">
+                        <span class="sqs-queue-meta-label">DataStore:</span>
+                        <span class="sqs-queue-meta-value">{{ queue.datastore_name or queue.datastore_id[:8] }}</span>
+                    </span>
+                    {% if queue.last_poll_at %}
+                    <span class="sqs-queue-meta-item">
+                        <span class="sqs-queue-meta-label">Last poll:</span>
+                        <span class="sqs-queue-meta-value">{{ queue.last_poll_at.split('T')[1][:8] if 'T' in queue.last_poll_at else queue.last_poll_at }}</span>
+                    </span>
+                    {% endif %}
+                    {% if queue.events_today is defined and queue.events_today > 0 %}
+                    <span class="sqs-queue-meta-item">
+                        <span class="sqs-queue-meta-label">Events today:</span>
+                        <span class="sqs-queue-meta-value">{{ queue.events_today }}</span>
+                    </span>
+                    {% endif %}
+                </div>
+                {% if queue.error_message %}
+                <div class="alert alert-error" style="margin-top: var(--space-sm); margin-bottom: 0; font-size: 0.8125rem;">
+                    {{ queue.error_message }}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="sqs-empty">
+            <div class="sqs-empty-icon">
+                <img src="/static/img/icons/inbox.svg" alt="" class="icon icon-xl icon-muted">
+            </div>
+            <p>No queues configured</p>
+            <p class="text-muted" style="font-size: 0.875rem;">Add an SQS queue to enable automatic S3 imports</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body">
+        <div class="sqs-empty">
+            <div class="sqs-empty-icon">
+                <img src="/static/img/icons/inbox.svg" alt="" class="icon icon-xl icon-muted">
+            </div>
+            <p>Configure SQS credentials first</p>
+            <p class="text-muted" style="font-size: 0.875rem;">Add AWS credentials with SQS read permissions above</p>
+        </div>
+    </div>
+</div>
+{% endif %}

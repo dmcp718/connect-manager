@@ -2,6 +2,7 @@
 ARQ Worker for Import Jobs
 Parallel job processing with Valkey/Redis backend
 DataStore-centric credential lookup
+SQS polling for event-driven imports
 """
 
 import asyncio
@@ -16,6 +17,7 @@ from services import database as db
 from services.lucidlink import LucidLinkClient
 from services.s3_service import S3Service
 from services import secrets
+from services.sqs_poller import sqs_poll_cron
 
 # Initialize database on module load
 db.init_db()
@@ -238,6 +240,7 @@ async def on_shutdown(ctx: dict) -> None:
 class WorkerSettings:
     """ARQ worker settings."""
     functions = [import_job]
+    cron_jobs = [sqs_poll_cron]  # SQS polling every 30 seconds
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings = get_redis_settings()

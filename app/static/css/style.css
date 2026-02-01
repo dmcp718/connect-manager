@@ -1373,3 +1373,364 @@ p {
     font-size: 0.8125rem;
     margin-top: var(--space-sm);
 }
+
+/* ============================================
+   SQS Tab Components
+   ============================================ */
+
+/* SQS Container */
+.sqs-container {
+    max-width: 800px;
+}
+
+/* SQS Credentials Form */
+.sqs-credentials-form {
+    margin-bottom: var(--space-lg);
+}
+
+.sqs-credentials-form .form-row {
+    display: flex;
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.sqs-credentials-form .form-row > * {
+    flex: 1;
+}
+
+.sqs-credentials-form .form-row.form-row-3 > *:last-child {
+    flex: 0 0 140px;
+}
+
+/* SQS Queue List */
+.sqs-queue-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.sqs-queue-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-md);
+}
+
+.sqs-queue-title {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.125rem;
+}
+
+/* SQS Queue Card */
+.sqs-queue-card {
+    display: flex;
+    flex-direction: column;
+    background-color: var(--color-gray-90);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    border-left: 3px solid var(--color-neon);
+}
+
+.sqs-queue-card.paused {
+    border-left-color: var(--color-gray-50);
+    opacity: 0.8;
+}
+
+.sqs-queue-card.error {
+    border-left-color: var(--color-error);
+}
+
+.sqs-queue-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: var(--space-sm);
+}
+
+.sqs-queue-card-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.sqs-queue-name {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--color-white);
+    margin-bottom: 4px;
+}
+
+.sqs-queue-arn {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.75rem;
+    color: var(--color-gray-40);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sqs-queue-card-actions {
+    display: flex;
+    gap: var(--space-xs);
+    flex-shrink: 0;
+    margin-left: var(--space-md);
+}
+
+.sqs-queue-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    font-size: 0.8125rem;
+    color: var(--color-gray-40);
+}
+
+.sqs-queue-meta-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.sqs-queue-meta-label {
+    color: var(--color-gray-50);
+}
+
+.sqs-queue-meta-value {
+    color: var(--color-gray-20);
+}
+
+/* SQS Status Badge */
+.sqs-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: 2px var(--space-sm);
+    border-radius: var(--radius-full);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.sqs-status-badge.active {
+    background-color: rgba(176, 251, 21, 0.15);
+    color: var(--color-neon);
+}
+
+.sqs-status-badge.paused {
+    background-color: rgba(128, 128, 128, 0.15);
+    color: var(--color-gray-40);
+}
+
+.sqs-status-badge.error {
+    background-color: rgba(248, 104, 90, 0.15);
+    color: var(--color-error);
+}
+
+.sqs-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: currentColor;
+}
+
+/* SQS Events Feed */
+.sqs-events {
+    margin-top: var(--space-lg);
+}
+
+.sqs-events-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-md);
+}
+
+.sqs-events-title {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--color-gray-20);
+}
+
+.sqs-events-list {
+    display: flex;
+    flex-direction: column;
+    background-color: var(--color-gray-90);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.sqs-event-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--color-gray-80);
+    font-size: 0.8125rem;
+}
+
+.sqs-event-row:last-child {
+    border-bottom: none;
+}
+
+.sqs-event-row:hover {
+    background-color: var(--color-gray-80);
+}
+
+.sqs-event-time {
+    flex: 0 0 70px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.75rem;
+    color: var(--color-gray-50);
+}
+
+.sqs-event-type {
+    flex: 0 0 100px;
+    color: var(--color-gray-30);
+    font-size: 0.75rem;
+}
+
+.sqs-event-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-white);
+}
+
+.sqs-event-status {
+    flex: 0 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sqs-event-status.completed {
+    color: var(--color-neon);
+}
+
+.sqs-event-status.pending {
+    color: var(--color-orange);
+}
+
+.sqs-event-status.processing {
+    color: var(--color-indigo);
+}
+
+.sqs-event-status.failed {
+    color: var(--color-error);
+}
+
+.sqs-event-status.skipped {
+    color: var(--color-gray-50);
+}
+
+/* SQS Empty State */
+.sqs-empty {
+    text-align: center;
+    padding: var(--space-2xl);
+    color: var(--color-gray-50);
+}
+
+.sqs-empty-icon {
+    margin-bottom: var(--space-md);
+}
+
+.sqs-empty-icon .icon {
+    width: 48px;
+    height: 48px;
+}
+
+/* SQS Queue Modal */
+.sqs-queue-form .form-group {
+    margin-bottom: var(--space-md);
+}
+
+.sqs-queue-form .form-hint {
+    margin-top: var(--space-xs);
+}
+
+/* Checkbox styling */
+.form-checkbox {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    cursor: pointer;
+}
+
+.form-checkbox input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-neon);
+}
+
+/* SQS Mode Toggle */
+.sqs-mode-toggle {
+    display: flex;
+    gap: 0;
+    background-color: var(--color-gray-80);
+    border-radius: var(--radius-md);
+    padding: 4px;
+}
+
+.sqs-mode-btn {
+    flex: 1;
+    padding: var(--space-sm) var(--space-md);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--color-gray-40);
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.sqs-mode-btn:hover {
+    color: var(--color-white);
+}
+
+.sqs-mode-btn.active {
+    background-color: var(--color-gray-70);
+    color: var(--color-white);
+}
+
+/* SQS Setup Info Box */
+.sqs-setup-info {
+    background-color: var(--color-gray-80);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin-top: var(--space-md);
+}
+
+.sqs-setup-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--color-gray-20);
+    margin-bottom: var(--space-sm);
+}
+
+.sqs-setup-steps {
+    margin: 0;
+    padding-left: var(--space-lg);
+    font-size: 0.8125rem;
+    color: var(--color-gray-40);
+    line-height: 1.6;
+}
+
+.sqs-setup-steps li {
+    margin-bottom: var(--space-xs);
+}
+
+/* Alpine x-cloak */
+[x-cloak] {
+    display: none !important;
+}
