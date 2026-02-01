@@ -332,5 +332,5 @@ async def process_s3_event(
 
 
 # Cron job configuration for ARQ
-# Runs every 30 seconds on seconds 0 and 30
-sqs_poll_cron = cron(poll_sqs_queues, second={0, 30})
+# Runs every 10 seconds
+sqs_poll_cron = cron(poll_sqs_queues, second={0, 10, 20, 30, 40, 50})
