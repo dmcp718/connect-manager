@@ -38,46 +38,82 @@
                     hx-post="/api/auth/change-password"
                     hx-swap="innerHTML"
                     hx-target="#password-result"
-                    x-data="{ submitting: false }"
+                    x-data="{ submitting: false, showCurrent: false, showNew: false, showConfirm: false }"
                     @submit="submitting = true"
                     @htmx:after-request="submitting = false"
                 >
                     <div class="form-row">
                         <div class="form-group">
                             <label for="current_password">Current password</label>
-                            <input
-                                type="password"
-                                id="current_password"
-                                name="current_password"
-                                required
-                                autocomplete="current-password"
-                                class="form-input"
-                            >
+                            <div class="input-password">
+                                <input
+                                    :type="showCurrent ? 'text' : 'password'"
+                                    id="current_password"
+                                    name="current_password"
+                                    required
+                                    autocomplete="current-password"
+                                    class="form-input"
+                                >
+                                <button type="button" class="eye-toggle" @click="showCurrent = !showCurrent" tabindex="-1">
+                                    <svg x-show="!showCurrent" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                    <svg x-show="showCurrent" x-cloak width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label for="new_password">New password</label>
-                            <input
-                                type="password"
-                                id="new_password"
-                                name="new_password"
-                                required
-                                minlength="8"
-                                autocomplete="new-password"
-                                class="form-input"
-                            >
+                            <div class="input-password">
+                                <input
+                                    :type="showNew ? 'text' : 'password'"
+                                    id="new_password"
+                                    name="new_password"
+                                    required
+                                    minlength="8"
+                                    autocomplete="new-password"
+                                    class="form-input"
+                                >
+                                <button type="button" class="eye-toggle" @click="showNew = !showNew" tabindex="-1">
+                                    <svg x-show="!showNew" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                    <svg x-show="showNew" x-cloak width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                                    </svg>
+                                </button>
+                            </div>
                             <small class="form-hint">Min 8 chars, uppercase, lowercase, number</small>
                         </div>
                         <div class="form-group">
                             <label for="confirm_password">Confirm password</label>
-                            <input
-                                type="password"
-                                id="confirm_password"
-                                name="confirm_password"
-                                required
-                                minlength="8"
-                                autocomplete="new-password"
-                                class="form-input"
-                            >
+                            <div class="input-password">
+                                <input
+                                    :type="showConfirm ? 'text' : 'password'"
+                                    id="confirm_password"
+                                    name="confirm_password"
+                                    required
+                                    minlength="8"
+                                    autocomplete="new-password"
+                                    class="form-input"
+                                >
+                                <button type="button" class="eye-toggle" @click="showConfirm = !showConfirm" tabindex="-1">
+                                    <svg x-show="!showConfirm" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                    <svg x-show="showConfirm" x-cloak width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                         <div class="form-group form-group-btn">
                             <button type="submit" class="btn btn-primary" :disabled="submitting">
@@ -342,6 +378,36 @@
 .password-form .form-input:focus {
     outline: none;
     border-color: var(--color-indigo);
+}
+
+.password-form .input-password {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-form .input-password .form-input {
+    padding-right: 40px;
+}
+
+.password-form .eye-toggle {
+    position: absolute;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--color-gray-50);
+    cursor: pointer;
+    transition: color 150ms ease;
+}
+
+.password-form .eye-toggle:hover {
+    color: var(--color-white);
 }
 
 .password-form .form-hint {
