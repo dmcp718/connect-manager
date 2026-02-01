@@ -142,7 +142,7 @@ p {
 .header-icon {
     width: 32px;
     height: 32px;
-    filter: invert(1); /* Make SVG white on dark background */
+    /* SVG uses brand colors directly - no filter needed */
 }
 
 .header-title {
