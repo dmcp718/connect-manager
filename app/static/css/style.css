@@ -1362,6 +1362,12 @@ p {
     font-size: 0.875rem;
 }
 
+.help-note {
+    color: var(--color-gray-40) !important;
+    font-size: 0.875rem;
+    font-style: italic;
+}
+
 .help-hint {
     color: var(--color-gray-50) !important;
     font-size: 0.8125rem;

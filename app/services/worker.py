@@ -188,12 +188,12 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
             completed += batch_new + batch_skipped
             failed += batch_failed
 
-            # Log batch progress with breakdown
+            # Log progress with cumulative totals
             progress_pct = int((completed + failed) / total * 100)
             if first_error and batch_failed > 0:
-                await log(f"Progress: {completed + failed}/{total} ({progress_pct}%) - {batch_new} new, {batch_skipped} skipped, {batch_failed} errors: {first_error}")
+                await log(f"Progress: {completed + failed}/{total} ({progress_pct}%) - {total_new} new, {total_skipped} skipped, {failed} errors: {first_error}")
             else:
-                await log(f"Progress: {completed + failed}/{total} ({progress_pct}%) - {batch_new} new, {batch_skipped} skipped, {batch_failed} errors")
+                await log(f"Progress: {completed + failed}/{total} ({progress_pct}%) - {total_new} new, {total_skipped} skipped, {failed} errors")
 
             # Update progress
             db.update_job(
