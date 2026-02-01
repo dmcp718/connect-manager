@@ -144,7 +144,7 @@ Automatic S3-to-LucidLink imports triggered by S3 event notifications via SQS qu
 3. App auto-configures:
    - SQS queue policy (allows S3 to send messages)
    - S3 bucket event notifications (ObjectCreated events → SQS)
-4. Workers poll SQS every 30 seconds (distributed lock prevents duplicates)
+4. Workers poll SQS every 10 seconds (distributed lock prevents duplicates)
 5. S3 events trigger automatic imports to LucidLink
 
 ### Required IAM Permissions
