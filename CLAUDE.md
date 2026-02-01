@@ -81,20 +81,31 @@ POST /filespaces/{id}/external/entries              # Import file
 
 ## Development
 
-### Run locally
+### Run with wrapper scripts
 ```bash
-docker compose up --build
+# macOS/Linux
+./run.sh              # Start
+./run.sh build        # Rebuild and start
+./run.sh logs         # View logs
+./run.sh restart      # Restart
+
+# Windows
+run.bat               # Start
+run.bat build         # Rebuild and start
+run.bat logs          # View logs
 ```
 
-### Rebuild after changes
+### Run with Docker Compose directly
 ```bash
 docker compose up --build -d
-```
-
-### View logs
-```bash
 docker compose logs -f web
 docker compose logs -f worker
+```
+
+### Manual development (requires Valkey)
+```bash
+cd app
+uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ## Brand Guidelines

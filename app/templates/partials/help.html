@@ -8,7 +8,7 @@
                 <h4 class="help-heading">1. Connect to LucidLink</h4>
                 <ol class="help-list">
                     <li>Go to the <strong>Settings</strong> tab</li>
-                    <li>Enter your LucidLink <strong>API Endpoint</strong> (e.g., <code>https://api.lucidlink.com/api/v1</code>)</li>
+                    <li>Enter your LucidLink <strong>API Endpoint</strong> (e.g., <code>http://localhost:3003/api/v1</code>)</li>
                     <li>Paste your <strong>API Token</strong> (Bearer token from admin console)</li>
                     <li>Click <strong>Load Filespaces</strong></li>
                 </ol>
@@ -116,18 +116,29 @@
         </div>
         <div class="card-body">
             <div class="help-section">
-                <p>Full API documentation is available via Swagger UI at your API endpoint:</p>
+                <h4 class="help-heading">Swagger UI</h4>
+                <p>Interactive API documentation is available via Swagger UI at your API endpoint:</p>
                 {% if api_host %}
                 <p>
                     <a href="{{ api_host }}/docs" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
                         <img src="/static/img/icons/link.svg" alt="" class="icon icon-sm icon-white">
-                        Open API documentation
+                        Open Swagger docs
                     </a>
                 </p>
                 <p class="help-hint">Opens: <code>{{ api_host }}/docs</code></p>
                 {% else %}
-                <p class="text-muted">Configure an API endpoint in Settings to access the documentation.</p>
+                <p class="text-muted">Configure an API endpoint in Settings to access the Swagger documentation.</p>
                 {% endif %}
+            </div>
+            <div class="help-section">
+                <h4 class="help-heading">Knowledge base</h4>
+                <p>For detailed guides and tutorials on the LucidLink API:</p>
+                <p>
+                    <a href="https://support.lucidlink.com/hc/en-us/sections/40116101682829-LucidLink-API" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+                        <img src="/static/img/icons/link.svg" alt="" class="icon icon-sm icon-white">
+                        LucidLink API knowledge base
+                    </a>
+                </p>
             </div>
         </div>
     </div>

@@ -12,25 +12,44 @@ A web application for importing S3 objects into LucidLink filespaces using the E
 
 ## Quick Start
 
-### Docker Compose (Recommended)
+### Docker (Recommended)
 
+**macOS / Linux:**
 ```bash
-docker compose up --build
+./run.sh
+```
+
+**Windows:**
+```cmd
+run.bat
 ```
 
 Open http://localhost:8000 in your browser.
 
-### Manual Setup
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `start` | Start the application (default) |
+| `stop` | Stop the application |
+| `restart` | Restart the application |
+| `logs` | Show application logs |
+| `status` | Show container status |
+| `build` | Rebuild and start |
+| `clean` | Stop and remove all containers/volumes |
+
+Example: `./run.sh logs` or `run.bat restart`
+
+### Manual Setup (Development)
+
+Requires [uv](https://docs.astral.sh/uv/) and a running Valkey/Redis instance.
 
 ```bash
 cd app
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000
+uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Note: Manual setup requires a separate Valkey/Redis instance for the job queue.
+Note: Manual setup requires `VALKEY_HOST` and `VALKEY_PORT` environment variables pointing to a Redis-compatible server.
 
 ## Configuration
 
