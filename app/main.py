@@ -988,24 +988,23 @@ async def tab_help(request: Request):
     })
 
 
-@app.get("/api/tab/users", response_class=HTMLResponse)
-async def tab_users(request: Request):
-    """Return users management tab content (admin only)."""
-    # Check admin access
-    is_admin = getattr(request.state, "is_admin", False)
-    if not is_admin:
-        return templates.TemplateResponse("partials/not_authorized.html", {
-            "request": request,
-            "error": "Admin access required",
-        })
-
+@app.get("/api/tab/account", response_class=HTMLResponse)
+async def tab_account(request: Request):
+    """Return account settings tab content."""
     user_id = getattr(request.state, "user_id", None)
-    users = db.list_users()
+    is_admin = getattr(request.state, "is_admin", False)
 
-    return templates.TemplateResponse("partials/users_tab.html", {
+    # Get current user info
+    current_user = db.get_user_by_id(user_id) if user_id else None
+
+    # Get all users for admin view
+    users = db.list_users() if is_admin else []
+
+    return templates.TemplateResponse("partials/account_tab.html", {
         "request": request,
+        "current_user": current_user,
         "users": users,
-        "current_user_id": user_id,
+        "is_admin": is_admin,
     })
 
 

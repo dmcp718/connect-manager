@@ -253,13 +253,16 @@ async def delete_user(
     admin: TokenData = Depends(require_admin),
 ):
     """Delete a user (admin only)."""
+    current_user = db.get_user_by_id(admin.user_id)
+
     # Prevent self-deletion
     if user_id == admin.user_id:
         users = db.list_users()
-        return templates.TemplateResponse("partials/users_tab.html", {
+        return templates.TemplateResponse("partials/account_tab.html", {
             "request": request,
+            "current_user": current_user,
             "users": users,
-            "current_user_id": admin.user_id,
+            "is_admin": True,
             "error": "Cannot delete your own account",
         })
 
@@ -268,19 +271,21 @@ async def delete_user(
 
     if not db.delete_user(user_id):
         users = db.list_users()
-        return templates.TemplateResponse("partials/users_tab.html", {
+        return templates.TemplateResponse("partials/account_tab.html", {
             "request": request,
+            "current_user": current_user,
             "users": users,
-            "current_user_id": admin.user_id,
+            "is_admin": True,
             "error": "User not found",
         })
 
     # Return updated users tab
     users = db.list_users()
-    return templates.TemplateResponse("partials/users_tab.html", {
+    return templates.TemplateResponse("partials/account_tab.html", {
         "request": request,
+        "current_user": current_user,
         "users": users,
-        "current_user_id": admin.user_id,
+        "is_admin": True,
         "success": "User deleted successfully",
     })
 
