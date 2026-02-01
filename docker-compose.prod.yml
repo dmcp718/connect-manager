@@ -1,0 +1,41 @@
+# Production overrides - adds Caddy reverse proxy with automatic HTTPS
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Or:    ./run.sh prod
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:?DOMAIN environment variable is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    # Remove direct port exposure - Caddy handles external traffic
+    ports: !override []
+    environment:
+      - VALKEY_HOST=valkey
+      - VALKEY_PORT=6379
+      - DATA_DIR=/data
+      - LL_API_HOST=${LL_API_HOST:-https://dev-admin-api.solutions-eng.online:8443/api/v1}
+      # Production authentication settings
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY environment variable is required}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      - COOKIE_SECURE=true
+
+  valkey:
+    # Remove direct port exposure in production
+    ports: !override []
+
+volumes:
+  caddy-data:
+  caddy-config:
