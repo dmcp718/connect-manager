@@ -1321,6 +1321,7 @@ async def add_sqs_queue(
             datastore_id=datastore_id,
             filespace_id=filespace_id,
             import_prefix=import_prefix.strip(),
+            user_id=state.user_id,
         )
 
         action = "created" if mode == "create" else "added"

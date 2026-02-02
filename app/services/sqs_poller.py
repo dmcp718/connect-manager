@@ -266,13 +266,14 @@ async def process_s3_event(
         )
         return
 
-    # Get LucidLink API token
-    token = secrets.get_lucidlink_token()
+    # Get LucidLink API token for the user who created this queue
+    user_id = queue.get("user_id")
+    token = secrets.get_user_token(user_id) if user_id else secrets.get_lucidlink_token()
     if not token:
         db.update_sqs_event(
             event_id,
             status="failed",
-            error_message="LucidLink API token not configured",
+            error_message="LucidLink API token not configured - please reconnect in Settings",
         )
         return
 

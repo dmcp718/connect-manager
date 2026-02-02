@@ -666,14 +666,15 @@ def create_sqs_queue(
     datastore_id: str,
     filespace_id: str,
     import_prefix: str = "",
+    user_id: Optional[str] = None,
 ) -> str:
     """Create a new SQS queue configuration."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO sqs_queues (id, queue_url, queue_arn, name, region, datastore_id, filespace_id, import_prefix)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (queue_id, queue_url, queue_arn, name, region, datastore_id, filespace_id, import_prefix))
+        INSERT INTO sqs_queues (id, queue_url, queue_arn, name, region, datastore_id, filespace_id, import_prefix, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (queue_id, queue_url, queue_arn, name, region, datastore_id, filespace_id, import_prefix, user_id))
     conn.commit()
     conn.close()
     return queue_id
