@@ -70,20 +70,84 @@
         </div>
 
         <!-- Use Existing Queue -->
-        <div x-show="mode === 'existing'" x-cloak>
+        <div x-show="mode === 'existing'" x-cloak x-data="{ inputMode: 'browse' }">
             <div class="form-group">
-                <label class="form-label" for="queue_url">Queue URL or ARN</label>
-                <input
-                    type="text"
-                    id="queue_url"
-                    name="queue_url"
-                    class="form-input"
-                    placeholder="https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
-                    x-bind:required="mode === 'existing'"
-                >
-                <span class="form-hint">
-                    Paste the queue URL or ARN from AWS Console
+                <div class="sqs-mode-toggle" style="margin-bottom: var(--space-sm);">
+                    <button type="button"
+                            class="sqs-mode-btn"
+                            :class="{ 'active': inputMode === 'browse' }"
+                            @click="inputMode = 'browse'">
+                        Browse queues
+                    </button>
+                    <button type="button"
+                            class="sqs-mode-btn"
+                            :class="{ 'active': inputMode === 'paste' }"
+                            @click="inputMode = 'paste'">
+                        Paste URL/ARN
+                    </button>
+                </div>
+            </div>
+
+            <!-- Browse Queues -->
+            <div x-show="inputMode === 'browse'" x-cloak>
+                <div class="form-row" style="margin-bottom: var(--space-sm);">
+                    <div class="form-group" style="margin-bottom: 0; flex: 0 0 140px;">
+                        <label class="form-label" for="discover_region">Region</label>
+                        <select
+                            id="discover_region"
+                            class="form-select"
+                            hx-get="/api/sqs/queues/discover"
+                            hx-trigger="change"
+                            hx-target="#discovered-queues"
+                            hx-swap="innerHTML"
+                            hx-include="this"
+                            name="region"
+                        >
+                            <option value="us-east-1">us-east-1</option>
+                            <option value="us-east-2">us-east-2</option>
+                            <option value="us-west-1">us-west-1</option>
+                            <option value="us-west-2">us-west-2</option>
+                            <option value="eu-west-1">eu-west-1</option>
+                            <option value="eu-west-2">eu-west-2</option>
+                            <option value="eu-central-1">eu-central-1</option>
+                            <option value="ap-southeast-1">ap-southeast-1</option>
+                            <option value="ap-southeast-2">ap-southeast-2</option>
+                            <option value="ap-northeast-1">ap-northeast-1</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0; flex: 1;">
+                        <label class="form-label" for="discovered_queue">Queue</label>
+                        <select
+                            id="discovered-queues"
+                            name="queue_url"
+                            class="form-select"
+                            x-bind:required="mode === 'existing' && inputMode === 'browse'"
+                        >
+                            <option value="">Select region first...</option>
+                        </select>
+                    </div>
+                </div>
+                <span class="form-hint" style="display: block; margin-bottom: var(--space-md);">
+                    Select a region to discover existing SQS queues
                 </span>
+            </div>
+
+            <!-- Paste URL/ARN -->
+            <div x-show="inputMode === 'paste'" x-cloak>
+                <div class="form-group">
+                    <label class="form-label" for="queue_url_paste">Queue URL or ARN</label>
+                    <input
+                        type="text"
+                        id="queue_url_paste"
+                        name="queue_url"
+                        class="form-input"
+                        placeholder="https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
+                        x-bind:required="mode === 'existing' && inputMode === 'paste'"
+                    >
+                    <span class="form-hint">
+                        Paste the queue URL or ARN from AWS Console
+                    </span>
+                </div>
             </div>
         </div>
 

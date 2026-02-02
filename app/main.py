@@ -1167,6 +1167,45 @@ async def sqs_add_queue_modal(request: Request):
     })
 
 
+@app.get("/api/sqs/queues/discover", response_class=HTMLResponse)
+async def discover_sqs_queues(request: Request, region: str = "us-east-1"):
+    """Discover existing SQS queues in a region. Returns HTML options for select."""
+    from services import secrets as sec
+    from services.sqs_service import SQSService, SQSError
+
+    try:
+        # Get SQS credentials
+        sqs_creds = db.get_sqs_credentials()
+        if not sqs_creds:
+            return HTMLResponse('<option value="">No credentials configured</option>')
+
+        access_key = sqs_creds.get("access_key")
+        secret_key_ref = sqs_creds.get("secret_key_encrypted")
+        secret_key = sec.get_secret(f"sqs_secret_{secret_key_ref}")
+
+        if not access_key or not secret_key:
+            return HTMLResponse('<option value="">Invalid credentials</option>')
+
+        # List queues in the selected region
+        sqs = SQSService(access_key, secret_key, region)
+        queues = sqs.list_queues()
+
+        if not queues:
+            return HTMLResponse(f'<option value="">No queues found in {region}</option>')
+
+        # Build HTML options
+        options = ['<option value="">Select a queue...</option>']
+        for q in queues:
+            options.append(f'<option value="{q["url"]}">{q["name"]}</option>')
+
+        return HTMLResponse('\n'.join(options))
+
+    except SQSError as e:
+        return HTMLResponse(f'<option value="">Error: {str(e)}</option>')
+    except Exception as e:
+        return HTMLResponse(f'<option value="">Error discovering queues</option>')
+
+
 @app.post("/api/sqs/queues", response_class=HTMLResponse)
 async def add_sqs_queue(
     request: Request,

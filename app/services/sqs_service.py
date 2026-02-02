@@ -320,6 +320,39 @@ class SQSService:
                 raise SQSError(f"Queue '{queue_name}' already exists")
             raise SQSError(f"Failed to create queue: {e}")
 
+    def list_queues(self, prefix: str = "") -> List[Dict[str, str]]:
+        """
+        List all SQS queues in the current region.
+
+        Args:
+            prefix: Optional queue name prefix to filter results
+
+        Returns:
+            List of dictionaries with queue info (url, name)
+        """
+        try:
+            params = {}
+            if prefix:
+                params['QueueNamePrefix'] = prefix
+
+            response = self.client.list_queues(**params)
+            queue_urls = response.get('QueueUrls', [])
+
+            queues = []
+            for url in queue_urls:
+                # Extract queue name from URL
+                # URL format: https://sqs.region.amazonaws.com/account-id/queue-name
+                name = url.split('/')[-1]
+                queues.append({
+                    'url': url,
+                    'name': name,
+                })
+
+            return queues
+
+        except ClientError as e:
+            raise SQSError(f"Failed to list queues: {e}")
+
     def get_queue_policy_for_s3(self, queue_arn: str, bucket_name: str, account_id: str) -> str:
         """
         Generate an SQS policy that allows S3 to send notifications.
