@@ -138,38 +138,6 @@ New files uploaded to the S3 bucket will be automatically imported to LucidLink.
 - `sqs:ReceiveMessage`, `sqs:DeleteMessage`
 - `s3:GetBucketNotificationConfiguration`, `s3:PutBucketNotificationConfiguration`
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Docker Compose                            │
-├─────────────┬─────────────┬─────────────┬───────────────────┤
-│   Web App   │  Worker 1   │  Worker 2   │      Valkey       │
-│  (FastAPI)  │ (ARQ+SQS)   │ (ARQ+SQS)   │  (Job Queue)      │
-│   :8000     │             │             │     :6379         │
-└──────┬──────┴──────┬──────┴──────┬──────┴─────────┬─────────┘
-       │             │             │                │
-       │        SQS Polling        │                │
-       │        (10s interval)     │                │
-       ▼             ▼             ▼                │
-┌─────────────────────────────────────────────┐    │
-│           LucidLink REST API                │    │
-│    (External Data Store Management)         │    │
-└─────────────────────────────────────────────┘    │
-       │                                           │
-       ▼                                           │
-┌─────────────────────────────────────────────┐    │
-│              AWS SQS Queue                  │    │
-│       (S3 Event Notifications)              │    │
-└──────────────────┬──────────────────────────┘    │
-                   │                               │
-                   ▼                               │
-┌─────────────────────────────────────────────┐    │
-│              S3 Buckets                     │◄───┘
-│         (via boto3/httpx)                   │
-└─────────────────────────────────────────────┘
-```
-
 ## Project Structure
 
 ```
