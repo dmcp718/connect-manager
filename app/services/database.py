@@ -971,6 +971,20 @@ def count_users() -> int:
     return row["count"] if row else 0
 
 
+def update_user_role(user_id: str, is_admin: bool) -> bool:
+    """Update a user's admin role."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET is_admin = ? WHERE id = ?",
+        (is_admin, user_id)
+    )
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
 # ============== Session Management ==============
 
 def create_session(user_id: str, session_id: str, expires_at: datetime) -> str:

@@ -228,6 +228,37 @@
                         <td class="td-date">{{ user.created_at[:10] if user.created_at else '-' }}</td>
                         <td class="td-actions">
                             {% if user.id != current_user.id %}
+                            {% if user.is_admin %}
+                            <button
+                                class="btn-icon btn-icon-demote"
+                                hx-patch="/api/auth/users/{{ user.id }}/role"
+                                hx-vals='{"is_admin": "false"}'
+                                hx-target="#tab-content"
+                                hx-swap="innerHTML"
+                                hx-confirm="Remove admin privileges from {{ user.email }}?"
+                                title="Demote to user"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 19V5"></path>
+                                    <polyline points="5 12 12 19 19 12"></polyline>
+                                </svg>
+                            </button>
+                            {% else %}
+                            <button
+                                class="btn-icon btn-icon-promote"
+                                hx-patch="/api/auth/users/{{ user.id }}/role"
+                                hx-vals='{"is_admin": "true"}'
+                                hx-target="#tab-content"
+                                hx-swap="innerHTML"
+                                hx-confirm="Grant admin privileges to {{ user.email }}?"
+                                title="Promote to admin"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14"></path>
+                                    <polyline points="19 12 12 5 5 12"></polyline>
+                                </svg>
+                            </button>
+                            {% endif %}
                             <button
                                 class="btn-icon btn-icon-danger"
                                 hx-delete="/api/auth/users/{{ user.id }}"
@@ -538,7 +569,7 @@
 }
 
 .th-actions {
-    width: 60px;
+    width: 80px;
 }
 
 /* User Cell */
@@ -624,6 +655,15 @@
 /* Actions */
 .td-actions {
     text-align: right;
+    white-space: nowrap;
+}
+
+.td-actions .btn-icon {
+    margin-left: 4px;
+}
+
+.td-actions .btn-icon:first-child {
+    margin-left: 0;
 }
 
 .btn-icon {
@@ -648,6 +688,16 @@
 .btn-icon-danger:hover {
     background: rgba(248, 104, 90, 0.15);
     color: var(--color-error);
+}
+
+.btn-icon-promote:hover {
+    background: rgba(94, 83, 224, 0.15);
+    color: #8b7ff0;
+}
+
+.btn-icon-demote:hover {
+    background: rgba(255, 193, 7, 0.15);
+    color: #ffc107;
 }
 
 /* Empty state */

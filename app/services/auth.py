@@ -203,6 +203,25 @@ def create_invite_user(email: str, is_admin: bool = False) -> Tuple[Optional[str
     return user_id, temp_password, ""
 
 
+def change_user_role(user_id: str, is_admin: bool) -> Tuple[bool, str]:
+    """
+    Change a user's role. Revokes all sessions to force re-auth with new role.
+    Returns (success, error_message).
+    """
+    user = db.get_user_by_id(user_id)
+    if not user:
+        return False, "User not found"
+
+    # Update role in database
+    if not db.update_user_role(user_id, is_admin):
+        return False, "Failed to update user role"
+
+    # Revoke all user sessions to force re-login with new role claims
+    db.revoke_all_user_sessions(user_id)
+
+    return True, ""
+
+
 def ensure_admin_exists() -> None:
     """
     Ensure at least one admin user exists (for first-time setup).

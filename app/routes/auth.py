@@ -246,6 +246,51 @@ async def invite_user(
     })
 
 
+@router.patch("/users/{user_id}/role", response_class=HTMLResponse)
+async def change_user_role(
+    request: Request,
+    user_id: str,
+    is_admin: bool = Form(...),
+    admin: TokenData = Depends(require_admin),
+):
+    """Change a user's role (admin only)."""
+    current_user = db.get_user_by_id(admin.user_id)
+
+    # Prevent self-role-change
+    if user_id == admin.user_id:
+        users = db.list_users()
+        return templates.TemplateResponse("partials/account_tab.html", {
+            "request": request,
+            "current_user": current_user,
+            "users": users,
+            "is_admin": True,
+            "error": "Cannot change your own role",
+        })
+
+    success, error = auth.change_user_role(user_id, is_admin)
+    if not success:
+        users = db.list_users()
+        return templates.TemplateResponse("partials/account_tab.html", {
+            "request": request,
+            "current_user": current_user,
+            "users": users,
+            "is_admin": True,
+            "error": error,
+        })
+
+    # Return updated users tab
+    users = db.list_users()
+    target_user = db.get_user_by_id(user_id)
+    role_action = "promoted to admin" if is_admin else "demoted to user"
+    return templates.TemplateResponse("partials/account_tab.html", {
+        "request": request,
+        "current_user": current_user,
+        "users": users,
+        "is_admin": True,
+        "success": f"{target_user['email']} {role_action}",
+    })
+
+
 @router.delete("/users/{user_id}", response_class=HTMLResponse)
 async def delete_user(
     request: Request,
