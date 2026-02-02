@@ -240,6 +240,3 @@ ADMIN_PASSWORD=secure-password-here
 
 Caddy automatically provisions Let's Encrypt certificates on first request.
 
-## License
-
-Proprietary - LucidLink Corporation
