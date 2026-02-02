@@ -237,15 +237,15 @@
             }
         };
 
-        // When Logs tab loads, sync the count and flush pending
+        // When Logs tab loads, sync the count and discard pending
         document.body.addEventListener('htmx:afterSwap', function(event) {
             const logsContent = document.getElementById('logs-content');
             if (logsContent) {
                 // Sync: server just rendered N logs, update our counter
                 window.serverLogCount = logsContent.children.length;
                 sseLogIndex = window.serverLogCount;
-                // Flush any logs that arrived while tab was hidden
-                flushPendingLogs();
+                // Discard pending logs - server already rendered them
+                window.pendingLogs = [];
             }
         });
     </script>
