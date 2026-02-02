@@ -1168,7 +1168,7 @@ async def sqs_add_queue_modal(request: Request):
 
 
 @app.get("/api/sqs/queues/discover", response_class=HTMLResponse)
-async def discover_sqs_queues(request: Request, region: str = "us-east-1"):
+async def discover_sqs_queues(request: Request, queue_region: str = "us-east-1"):
     """Discover existing SQS queues in a region. Returns HTML options for select."""
     from services import secrets as sec
     from services.sqs_service import SQSService, SQSError
@@ -1187,11 +1187,11 @@ async def discover_sqs_queues(request: Request, region: str = "us-east-1"):
             return HTMLResponse('<option value="">Invalid credentials</option>')
 
         # List queues in the selected region
-        sqs = SQSService(access_key, secret_key, region)
+        sqs = SQSService(access_key, secret_key, queue_region)
         queues = sqs.list_queues()
 
         if not queues:
-            return HTMLResponse(f'<option value="">No queues found in {region}</option>')
+            return HTMLResponse(f'<option value="">No queues found in {queue_region}</option>')
 
         # Build HTML options
         options = ['<option value="">Select a queue...</option>']
@@ -1249,14 +1249,10 @@ async def add_sqs_queue(
         if mode == "create":
             # Use selected region for new queue
             region = queue_region
-        else:
-            # For existing queues, use default - region will be extracted from URL/ARN
-            region = "us-east-1"
 
-        # Initialize SQS service with appropriate region
-        sqs = SQSService(access_key, secret_key, region)
+            # Initialize SQS service
+            sqs = SQSService(access_key, secret_key, region)
 
-        if mode == "create":
             # Create a new queue
             if not queue_name:
                 raise ValueError("Queue name is required")
@@ -1298,6 +1294,18 @@ async def add_sqs_queue(
             normalized_url = SQSService.normalize_queue_input(queue_url)
             if not normalized_url:
                 raise ValueError("Invalid queue URL or ARN format")
+
+            # Extract region from queue URL (format: https://sqs.{region}.amazonaws.com/...)
+            # This handles both browse (where queue_region is set) and paste (where we need to extract)
+            import re
+            region_match = re.search(r'sqs\.([a-z0-9-]+)\.amazonaws\.com', normalized_url)
+            if region_match:
+                region = region_match.group(1)
+            else:
+                region = queue_region  # Use form value as fallback
+
+            # Initialize SQS service with the correct region
+            sqs = SQSService(access_key, secret_key, region)
 
             # Validate queue and get info
             queue_info = sqs.validate_queue_url(normalized_url)
