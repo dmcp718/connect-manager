@@ -122,6 +122,7 @@
                             name="queue_url"
                             class="form-select"
                             x-bind:required="mode === 'existing' && inputMode === 'browse'"
+                            x-bind:disabled="inputMode !== 'browse'"
                         >
                             <option value="">Select region first...</option>
                         </select>
@@ -143,6 +144,7 @@
                         class="form-input"
                         placeholder="https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
                         x-bind:required="mode === 'existing' && inputMode === 'paste'"
+                        x-bind:disabled="inputMode !== 'paste'"
                     >
                     <span class="form-hint">
                         Paste the queue URL or ARN from AWS Console
