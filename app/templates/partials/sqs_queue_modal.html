@@ -50,7 +50,7 @@
                 </div>
                 <div class="form-group" style="margin-bottom: 0; flex: 0 0 140px;">
                     <label class="form-label" for="queue_region">Region</label>
-                    <select id="queue_region" name="queue_region" class="form-select">
+                    <select id="queue_region" name="queue_region" class="form-select" x-bind:disabled="mode !== 'create'">
                         <option value="us-east-1">us-east-1</option>
                         <option value="us-east-2">us-east-2</option>
                         <option value="us-west-1">us-west-1</option>
@@ -102,6 +102,7 @@
                             hx-swap="innerHTML"
                             hx-include="this"
                             name="queue_region"
+                            x-bind:disabled="mode !== 'existing' || inputMode !== 'browse'"
                         >
                             <option value="us-east-1">us-east-1</option>
                             <option value="us-east-2">us-east-2</option>
