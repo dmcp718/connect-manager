@@ -460,11 +460,17 @@ def create_job(
     return job_id
 
 
-def get_job(job_id: int) -> Optional[Dict[str, Any]]:
-    """Get a job by ID."""
+def get_job(job_id: int, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Get a job by ID (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM import_jobs WHERE id = ?", (job_id,))
+    if user_id:
+        cursor.execute(
+            "SELECT * FROM import_jobs WHERE id = ? AND user_id = ?",
+            (job_id, user_id)
+        )
+    else:
+        cursor.execute("SELECT * FROM import_jobs WHERE id = ?", (job_id,))
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -520,32 +526,57 @@ def update_job(
     conn.close()
 
 
-def list_jobs(limit: int = 50) -> list:
-    """List recent jobs with duration and throughput calculation."""
+def list_jobs(limit: int = 50, user_id: Optional[str] = None) -> list:
+    """List recent jobs with duration and throughput calculation (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT *,
-            CASE
-                WHEN started_at IS NOT NULL AND completed_at IS NOT NULL THEN
-                    CAST((julianday(completed_at) - julianday(started_at)) * 86400 AS INTEGER)
-                WHEN started_at IS NOT NULL AND status = 'running' THEN
-                    CAST((julianday('now') - julianday(started_at)) * 86400 AS INTEGER)
-                ELSE NULL
-            END as duration_seconds,
-            CASE
-                WHEN started_at IS NOT NULL AND completed_at IS NOT NULL
-                     AND (julianday(completed_at) - julianday(started_at)) * 86400 > 0 THEN
-                    ROUND(CAST(completed_files AS REAL) / ((julianday(completed_at) - julianday(started_at)) * 86400), 2)
-                WHEN started_at IS NOT NULL AND status = 'running'
-                     AND (julianday('now') - julianday(started_at)) * 86400 > 0 THEN
-                    ROUND(CAST(completed_files AS REAL) / ((julianday('now') - julianday(started_at)) * 86400), 2)
-                ELSE NULL
-            END as entries_per_second
-        FROM import_jobs
-        ORDER BY created_at DESC
-        LIMIT ?
-    """, (limit,))
+    if user_id:
+        cursor.execute("""
+            SELECT *,
+                CASE
+                    WHEN started_at IS NOT NULL AND completed_at IS NOT NULL THEN
+                        CAST((julianday(completed_at) - julianday(started_at)) * 86400 AS INTEGER)
+                    WHEN started_at IS NOT NULL AND status = 'running' THEN
+                        CAST((julianday('now') - julianday(started_at)) * 86400 AS INTEGER)
+                    ELSE NULL
+                END as duration_seconds,
+                CASE
+                    WHEN started_at IS NOT NULL AND completed_at IS NOT NULL
+                         AND (julianday(completed_at) - julianday(started_at)) * 86400 > 0 THEN
+                        ROUND(CAST(completed_files AS REAL) / ((julianday(completed_at) - julianday(started_at)) * 86400), 2)
+                    WHEN started_at IS NOT NULL AND status = 'running'
+                         AND (julianday('now') - julianday(started_at)) * 86400 > 0 THEN
+                        ROUND(CAST(completed_files AS REAL) / ((julianday('now') - julianday(started_at)) * 86400), 2)
+                    ELSE NULL
+                END as entries_per_second
+            FROM import_jobs
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (user_id, limit))
+    else:
+        cursor.execute("""
+            SELECT *,
+                CASE
+                    WHEN started_at IS NOT NULL AND completed_at IS NOT NULL THEN
+                        CAST((julianday(completed_at) - julianday(started_at)) * 86400 AS INTEGER)
+                    WHEN started_at IS NOT NULL AND status = 'running' THEN
+                        CAST((julianday('now') - julianday(started_at)) * 86400 AS INTEGER)
+                    ELSE NULL
+                END as duration_seconds,
+                CASE
+                    WHEN started_at IS NOT NULL AND completed_at IS NOT NULL
+                         AND (julianday(completed_at) - julianday(started_at)) * 86400 > 0 THEN
+                        ROUND(CAST(completed_files AS REAL) / ((julianday(completed_at) - julianday(started_at)) * 86400), 2)
+                    WHEN started_at IS NOT NULL AND status = 'running'
+                         AND (julianday('now') - julianday(started_at)) * 86400 > 0 THEN
+                        ROUND(CAST(completed_files AS REAL) / ((julianday('now') - julianday(started_at)) * 86400), 2)
+                    ELSE NULL
+                END as entries_per_second
+            FROM import_jobs
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (limit,))
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -579,40 +610,59 @@ def get_running_job() -> Optional[Dict[str, Any]]:
     return dict(row) if row else None
 
 
-def cancel_job(job_id: int) -> bool:
-    """Cancel a pending or running job."""
+def cancel_job(job_id: int, user_id: Optional[str] = None) -> bool:
+    """Cancel a pending or running job (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE import_jobs
-        SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND status IN ('pending', 'running')
-    """, (job_id,))
+    if user_id:
+        cursor.execute("""
+            UPDATE import_jobs
+            SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status IN ('pending', 'running') AND user_id = ?
+        """, (job_id, user_id))
+    else:
+        cursor.execute("""
+            UPDATE import_jobs
+            SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status IN ('pending', 'running')
+        """, (job_id,))
     cancelled = cursor.rowcount > 0
     conn.commit()
     conn.close()
     return cancelled
 
 
-def delete_job(job_id: int) -> bool:
-    """Delete a job from history."""
+def delete_job(job_id: int, user_id: Optional[str] = None) -> bool:
+    """Delete a job from history (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM import_jobs WHERE id = ?", (job_id,))
+    if user_id:
+        cursor.execute(
+            "DELETE FROM import_jobs WHERE id = ? AND user_id = ?",
+            (job_id, user_id)
+        )
+    else:
+        cursor.execute("DELETE FROM import_jobs WHERE id = ?", (job_id,))
     deleted = cursor.rowcount > 0
     conn.commit()
     conn.close()
     return deleted
 
 
-def clear_completed_jobs() -> int:
-    """Clear all completed/failed/cancelled jobs."""
+def clear_completed_jobs(user_id: Optional[str] = None) -> int:
+    """Clear all completed/failed/cancelled jobs (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        DELETE FROM import_jobs
-        WHERE status IN ('completed', 'failed', 'cancelled')
-    """)
+    if user_id:
+        cursor.execute("""
+            DELETE FROM import_jobs
+            WHERE status IN ('completed', 'failed', 'cancelled') AND user_id = ?
+        """, (user_id,))
+    else:
+        cursor.execute("""
+            DELETE FROM import_jobs
+            WHERE status IN ('completed', 'failed', 'cancelled')
+        """)
     deleted = cursor.rowcount
     conn.commit()
     conn.close()
@@ -621,35 +671,49 @@ def clear_completed_jobs() -> int:
 
 # ============== SQS Credentials ==============
 
-def save_sqs_credentials(access_key: str, secret_key_encrypted: str, region: str) -> None:
-    """Save SQS IAM credentials (single row, replaces existing)."""
+def save_sqs_credentials(access_key: str, secret_key_encrypted: str, region: str, user_id: Optional[str] = None) -> None:
+    """Save SQS IAM credentials (per-user in multi-user mode, single row otherwise)."""
     conn = get_connection()
     cursor = conn.cursor()
-    # Delete existing and insert new
-    cursor.execute("DELETE FROM sqs_credentials")
-    cursor.execute("""
-        INSERT INTO sqs_credentials (id, access_key, secret_key_encrypted, region)
-        VALUES (1, ?, ?, ?)
-    """, (access_key, secret_key_encrypted, region))
+    if user_id:
+        # Per-user credentials: delete existing for this user and insert new
+        cursor.execute("DELETE FROM sqs_credentials WHERE user_id = ?", (user_id,))
+        cursor.execute("""
+            INSERT INTO sqs_credentials (id, access_key, secret_key_encrypted, region, user_id)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, access_key, secret_key_encrypted, region, user_id))
+    else:
+        # Global credentials (single-user mode): delete all and insert with id=1
+        cursor.execute("DELETE FROM sqs_credentials WHERE user_id IS NULL")
+        cursor.execute("""
+            INSERT INTO sqs_credentials (id, access_key, secret_key_encrypted, region)
+            VALUES (1, ?, ?, ?)
+        """, (access_key, secret_key_encrypted, region))
     conn.commit()
     conn.close()
 
 
-def get_sqs_credentials() -> Optional[Dict[str, Any]]:
-    """Get stored SQS credentials."""
+def get_sqs_credentials(user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Get stored SQS credentials (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM sqs_credentials WHERE id = 1")
+    if user_id:
+        cursor.execute("SELECT * FROM sqs_credentials WHERE user_id = ?", (user_id,))
+    else:
+        cursor.execute("SELECT * FROM sqs_credentials WHERE user_id IS NULL")
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
 
 
-def delete_sqs_credentials() -> bool:
-    """Delete SQS credentials."""
+def delete_sqs_credentials(user_id: Optional[str] = None) -> bool:
+    """Delete SQS credentials (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM sqs_credentials")
+    if user_id:
+        cursor.execute("DELETE FROM sqs_credentials WHERE user_id = ?", (user_id,))
+    else:
+        cursor.execute("DELETE FROM sqs_credentials WHERE user_id IS NULL")
     deleted = cursor.rowcount > 0
     conn.commit()
     conn.close()
@@ -681,21 +745,33 @@ def create_sqs_queue(
     return queue_id
 
 
-def get_sqs_queue(queue_id: str) -> Optional[Dict[str, Any]]:
-    """Get an SQS queue by ID."""
+def get_sqs_queue(queue_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Get an SQS queue by ID (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM sqs_queues WHERE id = ?", (queue_id,))
+    if user_id:
+        cursor.execute(
+            "SELECT * FROM sqs_queues WHERE id = ? AND user_id = ?",
+            (queue_id, user_id)
+        )
+    else:
+        cursor.execute("SELECT * FROM sqs_queues WHERE id = ?", (queue_id,))
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
 
 
-def list_sqs_queues() -> List[Dict[str, Any]]:
-    """List all SQS queues."""
+def list_sqs_queues(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """List all SQS queues (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM sqs_queues ORDER BY created_at DESC")
+    if user_id:
+        cursor.execute(
+            "SELECT * FROM sqs_queues WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,)
+        )
+    else:
+        cursor.execute("SELECT * FROM sqs_queues ORDER BY created_at DESC")
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -716,8 +792,9 @@ def update_sqs_queue(
     status: Optional[str] = None,
     last_poll_at: bool = False,
     error_message: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> bool:
-    """Update an SQS queue."""
+    """Update an SQS queue (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -737,10 +814,17 @@ def update_sqs_queue(
 
     if updates:
         params.append(queue_id)
-        cursor.execute(
-            f"UPDATE sqs_queues SET {', '.join(updates)} WHERE id = ?",
-            params
-        )
+        if user_id:
+            params.append(user_id)
+            cursor.execute(
+                f"UPDATE sqs_queues SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
+                params
+            )
+        else:
+            cursor.execute(
+                f"UPDATE sqs_queues SET {', '.join(updates)} WHERE id = ?",
+                params
+            )
         conn.commit()
 
     updated = cursor.rowcount > 0
@@ -748,14 +832,20 @@ def update_sqs_queue(
     return updated
 
 
-def delete_sqs_queue(queue_id: str) -> bool:
-    """Delete an SQS queue configuration."""
+def delete_sqs_queue(queue_id: str, user_id: Optional[str] = None) -> bool:
+    """Delete an SQS queue configuration (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
     # First delete associated events
     cursor.execute("DELETE FROM sqs_events WHERE queue_id = ?", (queue_id,))
     # Then delete the queue
-    cursor.execute("DELETE FROM sqs_queues WHERE id = ?", (queue_id,))
+    if user_id:
+        cursor.execute(
+            "DELETE FROM sqs_queues WHERE id = ? AND user_id = ?",
+            (queue_id, user_id)
+        )
+    else:
+        cursor.execute("DELETE FROM sqs_queues WHERE id = ?", (queue_id,))
     deleted = cursor.rowcount > 0
     conn.commit()
     conn.close()
@@ -824,31 +914,50 @@ def update_sqs_event(
     return updated
 
 
-def list_sqs_events(limit: int = 50) -> List[Dict[str, Any]]:
-    """List recent SQS events."""
+def list_sqs_events(limit: int = 50, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """List recent SQS events (filtered by user via queue's user_id in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT e.*, q.name as queue_name
-        FROM sqs_events e
-        LEFT JOIN sqs_queues q ON e.queue_id = q.id
-        ORDER BY e.created_at DESC
-        LIMIT ?
-    """, (limit,))
+    if user_id:
+        cursor.execute("""
+            SELECT e.*, q.name as queue_name
+            FROM sqs_events e
+            LEFT JOIN sqs_queues q ON e.queue_id = q.id
+            WHERE q.user_id = ?
+            ORDER BY e.created_at DESC
+            LIMIT ?
+        """, (user_id, limit))
+    else:
+        cursor.execute("""
+            SELECT e.*, q.name as queue_name
+            FROM sqs_events e
+            LEFT JOIN sqs_queues q ON e.queue_id = q.id
+            ORDER BY e.created_at DESC
+            LIMIT ?
+        """, (limit,))
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
 
-def get_sqs_event_count_today(queue_id: str) -> int:
-    """Get count of events for a queue today."""
+def get_sqs_event_count_today(queue_id: str, user_id: Optional[str] = None) -> int:
+    """Get count of events for a queue today (filtered by user in multi-user mode)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT COUNT(*) as count
-        FROM sqs_events
-        WHERE queue_id = ? AND date(created_at) = date('now')
-    """, (queue_id,))
+    if user_id:
+        # Verify queue belongs to user before counting
+        cursor.execute("""
+            SELECT COUNT(*) as count
+            FROM sqs_events e
+            JOIN sqs_queues q ON e.queue_id = q.id
+            WHERE e.queue_id = ? AND q.user_id = ? AND date(e.created_at) = date('now')
+        """, (queue_id, user_id))
+    else:
+        cursor.execute("""
+            SELECT COUNT(*) as count
+            FROM sqs_events
+            WHERE queue_id = ? AND date(created_at) = date('now')
+        """, (queue_id,))
     row = cursor.fetchone()
     conn.close()
     return row["count"] if row else 0

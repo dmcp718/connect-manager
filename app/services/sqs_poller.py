@@ -91,22 +91,7 @@ async def poll_sqs_queues(ctx: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "skipped", "reason": "another worker is polling"}
 
     try:
-        # Get SQS credentials
-        sqs_creds = db.get_sqs_credentials()
-        if not sqs_creds:
-            return {"status": "skipped", "reason": "no SQS credentials configured"}
-
-        # Decrypt secret key
-        access_key = sqs_creds.get("access_key")
-        secret_key_encrypted = sqs_creds.get("secret_key_encrypted")
-        secret_key = secrets.get_secret(f"sqs_secret_{secret_key_encrypted}")
-
-        if not access_key or not secret_key:
-            return {"status": "error", "reason": "invalid SQS credentials"}
-
-        region = sqs_creds.get("region", "us-east-1")
-
-        # Get active queues
+        # Get active queues (from all users - poller needs to process all)
         queues = db.list_active_sqs_queues()
         if not queues:
             return {"status": "ok", "queues_polled": 0, "events_processed": 0}
@@ -114,19 +99,37 @@ async def poll_sqs_queues(ctx: Dict[str, Any]) -> Dict[str, Any]:
         total_events = 0
         errors = []
 
-        # Group queues by region for efficient client reuse
-        sqs_clients = {}
+        # Group queues by (user_id, region) for efficient client reuse
+        # Each user has their own SQS credentials
+        sqs_clients = {}  # key: (user_id, region) -> SQSService
 
         for queue in queues:
             try:
-                # Use queue's region, fall back to default
-                queue_region = queue.get("region") or region
+                # Get user's SQS credentials for this queue
+                user_id = queue.get("user_id")
+                sqs_creds = db.get_sqs_credentials(user_id=user_id)
+                if not sqs_creds:
+                    db.update_sqs_queue(queue["id"], error_message="No SQS credentials configured for user")
+                    continue
 
-                # Get or create SQS client for this region
-                if queue_region not in sqs_clients:
-                    sqs_clients[queue_region] = SQSService(access_key, secret_key, queue_region)
+                # Decrypt secret key
+                access_key = sqs_creds.get("access_key")
+                secret_key_encrypted = sqs_creds.get("secret_key_encrypted")
+                secret_key = secrets.get_secret(f"sqs_secret_{secret_key_encrypted}")
 
-                sqs = sqs_clients[queue_region]
+                if not access_key or not secret_key:
+                    db.update_sqs_queue(queue["id"], error_message="Invalid SQS credentials")
+                    continue
+
+                # Use queue's region
+                queue_region = queue.get("region") or sqs_creds.get("region", "us-east-1")
+
+                # Get or create SQS client for this user+region combination
+                client_key = (user_id, queue_region)
+                if client_key not in sqs_clients:
+                    sqs_clients[client_key] = SQSService(access_key, secret_key, queue_region)
+
+                sqs = sqs_clients[client_key]
                 events_count = await poll_single_queue(ctx, sqs, queue)
                 total_events += events_count
 
@@ -234,6 +237,7 @@ async def process_s3_event(
     datastore_id = queue["datastore_id"]
     filespace_id = queue["filespace_id"]
     import_prefix = queue.get("import_prefix", "")
+    user_id = queue.get("user_id")
 
     bucket = event.get("bucket", "")
     object_key = event.get("key", "")
@@ -256,8 +260,8 @@ async def process_s3_event(
         event_time=event_time,
     )
 
-    # Get DataStore credentials for S3 access
-    cred = db.get_datastore_credentials(datastore_id)
+    # Get DataStore credentials for S3 access (user-specific in multi-user mode)
+    cred = db.get_datastore_credentials(datastore_id, user_id=user_id)
     if not cred:
         db.update_sqs_event(
             event_id,
@@ -267,7 +271,6 @@ async def process_s3_event(
         return
 
     # Get LucidLink API token for the user who created this queue
-    user_id = queue.get("user_id")
     token = secrets.get_user_token(user_id) if user_id else secrets.get_lucidlink_token()
     if not token:
         db.update_sqs_event(

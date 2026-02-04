@@ -72,7 +72,7 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
 
         datastore_id = job.get("datastore_id")
         if datastore_id:
-            cred = db.get_datastore_credentials(datastore_id)
+            cred = db.get_datastore_credentials(datastore_id, user_id=user_id)
             if cred:
                 credentials_key = cred.get("credentials_key")
                 aws_key, aws_secret = secrets.get_named_credentials(credentials_key)

@@ -137,20 +137,20 @@ class JobQueue:
 
         return job_id
 
-    def cancel_job(self, job_id: int) -> bool:
-        """Cancel a job."""
-        if db.cancel_job(job_id):
+    def cancel_job(self, job_id: int, user_id: Optional[str] = None) -> bool:
+        """Cancel a job (filtered by user in multi-user mode)."""
+        if db.cancel_job(job_id, user_id=user_id):
             self.log(f"🛑 Job #{job_id} cancelled")
             return True
         return False
 
-    def get_jobs(self) -> list:
-        """Get all jobs."""
-        return db.list_jobs()
+    def get_jobs(self, user_id: Optional[str] = None) -> list:
+        """Get all jobs (filtered by user in multi-user mode)."""
+        return db.list_jobs(user_id=user_id)
 
-    def get_queue_status(self) -> dict:
-        """Get current queue status."""
-        jobs = db.list_jobs(limit=100)
+    def get_queue_status(self, user_id: Optional[str] = None) -> dict:
+        """Get current queue status (filtered by user in multi-user mode)."""
+        jobs = db.list_jobs(limit=100, user_id=user_id)
         pending = sum(1 for j in jobs if j["status"] == "pending")
         running = sum(1 for j in jobs if j["status"] == "running")
 
