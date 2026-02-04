@@ -66,7 +66,6 @@
             <h3 class="card-title">Saved DataStores</h3>
         </div>
         <div class="card-body">
-            <div id="import-feedback"></div>
             <p class="text-muted" style="margin-bottom: var(--space-md); font-size: 0.875rem;">
                 DataStores with saved credentials for S3 browsing
             </p>
@@ -80,29 +79,15 @@
                                 {{ ds.bucket_name }} ({{ ds.filespace_name }})
                             </span>
                         </div>
-                        <div class="datastore-item-actions">
-                            <button
-                                class="btn btn-outline-neon btn-sm"
-                                hx-post="/api/import/folder"
-                                hx-vals='{"prefix": "", "datastore_id": "{{ ds.datastore_id }}"}'
-                                hx-target="#import-feedback"
-                                hx-swap="innerHTML"
-                                hx-confirm="Import entire bucket '{{ ds.bucket_name }}' recursively? This will queue all objects for import."
-                                @htmx:after-request.camel="if($event.detail.successful) { activeTab = 'jobs'; htmx.ajax('GET', '/api/jobs', {target: '#tab-content', swap: 'innerHTML'}) }"
-                            >
-                                <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                Import all
-                            </button>
-                            <button
-                                class="btn btn-ghost btn-sm"
-                                hx-delete="/api/datastores/{{ ds.datastore_id }}/credentials"
-                                hx-target="#tab-content"
-                                hx-swap="innerHTML"
-                                hx-confirm="Remove browsing credentials for '{{ ds.datastore_name }}'?"
-                            >
-                                <img src="/static/img/icons/x.svg" alt="Remove" class="icon icon-sm icon-muted">
-                            </button>
-                        </div>
+                        <button
+                            class="btn btn-ghost btn-sm"
+                            hx-delete="/api/datastores/{{ ds.datastore_id }}/credentials"
+                            hx-target="#tab-content"
+                            hx-swap="innerHTML"
+                            hx-confirm="Remove browsing credentials for '{{ ds.datastore_name }}'?"
+                        >
+                            <img src="/static/img/icons/x.svg" alt="Remove" class="icon icon-sm icon-muted">
+                        </button>
                     </div>
                     {% endfor %}
                 </div>
