@@ -277,8 +277,9 @@ async def process_s3_event(
         )
         return
 
-    # Get API host
-    api_host = db.get_setting("api_host") or ""
+    # Get API host (user-specific in multi-user mode)
+    api_host_key = f"api_host_{user_id}" if user_id else "api_host"
+    api_host = db.get_setting(api_host_key) or ""
 
     # Update event status to processing
     db.update_sqs_event(event_id, status="processing")
