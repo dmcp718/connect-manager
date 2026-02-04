@@ -74,3 +74,8 @@ DELETE /api/auth/users/{id}            # Delete user (admin)
 - **Colors**: Charcoal (#151519), Neon (#B0FB15), Indigo (#5E53E0)
 - **Typography**: Aeonik (headings), Inter (body)
 - **Icons**: Lucide SVG, **Case**: Sentence case only
+
+## AWS IAM Actions
+S3 bucket notification actions (do NOT add "Configuration" suffix):
+- `s3:GetBucketNotification` (not GetBucketNotificationConfiguration)
+- `s3:PutBucketNotification` (not PutBucketNotificationConfiguration)

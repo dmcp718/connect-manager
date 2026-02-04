@@ -1,15 +1,14 @@
-{% if sqs_events %}
 <div class="card sqs-events" id="sqs-events-section"
-     hx-get="/api/sqs/events"
+     hx-get="/api/sqs/events/content"
      hx-trigger="every 5s"
-     hx-swap="outerHTML">
+     hx-swap="innerHTML">
+{% if sqs_events %}
     <div class="card-header">
         <h3 class="card-title">Recent events</h3>
         <button class="btn btn-sm btn-ghost"
                 hx-delete="/api/sqs/events"
                 hx-target="#sqs-events-section"
-                hx-swap="outerHTML"
-                hx-confirm="Clear all event history?">
+                hx-swap="innerHTML">
             Clear history
         </button>
     </div>
@@ -37,11 +36,9 @@
             {% endfor %}
         </div>
     </div>
-</div>
 {% else %}
-<div id="sqs-events-section"
-     hx-get="/api/sqs/events"
-     hx-trigger="every 5s"
-     hx-swap="outerHTML">
-</div>
+    <div class="card-body sqs-empty">
+        <p class="text-muted">No events yet. Events will appear here when S3 notifications are received.</p>
+    </div>
 {% endif %}
+</div>

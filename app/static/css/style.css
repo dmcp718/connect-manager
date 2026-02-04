@@ -1731,6 +1731,7 @@ p {
 /* SQS Events Feed */
 .sqs-events {
     margin-top: var(--space-lg);
+    min-height: 120px;  /* Prevent collapse when empty */
 }
 
 .sqs-events-header {

@@ -29,6 +29,8 @@ from models.user import TokenData
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
+    # Validate JWT secret before anything else
+    auth_service.ensure_jwt_secret_valid()
     # Initialize database tables
     db.init_db()
     # Ensure at least one admin user exists
@@ -1589,6 +1591,19 @@ async def list_sqs_events(request: Request, limit: int = 50):
     })
 
 
+@app.get("/api/sqs/events/content", response_class=HTMLResponse)
+async def list_sqs_events_content(request: Request, limit: int = 50):
+    """List recent SQS events - inner content only for polling."""
+    _ = get_session_from_request(request)  # Verify authenticated
+    user_id = getattr(request.state, "user_id", None)
+    events = db.list_sqs_events(limit=limit, user_id=user_id)
+
+    return templates.TemplateResponse("partials/sqs_events_content.html", {
+        "request": request,
+        "sqs_events": events,
+    })
+
+
 @app.delete("/api/sqs/events", response_class=HTMLResponse)
 async def clear_sqs_events(request: Request):
     """Clear all SQS event history."""
@@ -1597,7 +1612,7 @@ async def clear_sqs_events(request: Request):
     deleted = db.clear_sqs_events(user_id=user_id)
     state.log(f"Cleared {deleted} SQS events")
 
-    return templates.TemplateResponse("partials/sqs_events.html", {
+    return templates.TemplateResponse("partials/sqs_events_content.html", {
         "request": request,
         "sqs_events": [],
     })

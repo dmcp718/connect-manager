@@ -7,7 +7,7 @@
 </div>
 <div class="modal-body" x-data="{ copied: false }">
     <p class="text-muted" style="margin-bottom: var(--space-md); font-size: 0.875rem;">
-        Attach this policy to your IAM user to enable SQS queue management and S3 event notifications.
+        Attach this policy to your IAM user to enable SQS queue management, S3 event notifications, and S3 browsing.
         Replace <code>ACCOUNT_ID</code> with your AWS account ID.
     </p>
 
@@ -26,7 +26,7 @@
                 "sqs:GetQueueUrl",
                 "sqs:ListQueues"
             ],
-            "Resource": "arn:aws:sqs:*:ACCOUNT_ID:ll-connect-*"
+            "Resource": "arn:aws:sqs:*:ACCOUNT_ID:*"
         },
         {
             "Sid": "SQSMessageAccess",
@@ -35,16 +35,33 @@
                 "sqs:ReceiveMessage",
                 "sqs:DeleteMessage"
             ],
-            "Resource": "arn:aws:sqs:*:ACCOUNT_ID:ll-connect-*"
+            "Resource": "arn:aws:sqs:*:ACCOUNT_ID:*"
         },
         {
             "Sid": "S3BucketNotifications",
             "Effect": "Allow",
             "Action": [
-                "s3:GetBucketNotificationConfiguration",
-                "s3:PutBucketNotificationConfiguration"
+                "s3:GetBucketNotification",
+                "s3:PutBucketNotification"
             ],
             "Resource": "arn:aws:s3:::*"
+        },
+        {
+            "Sid": "S3BrowseBuckets",
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket",
+                "s3:GetBucketLocation"
+            ],
+            "Resource": "arn:aws:s3:::*"
+        },
+        {
+            "Sid": "S3ReadObjects",
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject"
+            ],
+            "Resource": "arn:aws:s3:::*/*"
         }
     ]
 }</pre>

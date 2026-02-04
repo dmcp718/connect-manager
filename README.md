@@ -136,7 +136,7 @@ New files uploaded to the S3 bucket will be automatically imported to LucidLink.
 **Required IAM Permissions:**
 - `sqs:CreateQueue`, `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`
 - `sqs:ReceiveMessage`, `sqs:DeleteMessage`
-- `s3:GetBucketNotificationConfiguration`, `s3:PutBucketNotificationConfiguration`
+- `s3:GetBucketNotification`, `s3:PutBucketNotification`
 
 ## Project Structure
 
