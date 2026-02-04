@@ -166,10 +166,13 @@ async def load_datastores(request: Request, filespace: str = Form(...)):
         state.datastores[ds_name] = ds  # Store full object
         # Extract bucket info for display
         s3_params = ds.get("s3StorageParams", {})
+        # Check if we have credentials for this DataStore
+        has_credentials = db.get_datastore_credentials(ds_id) is not None
         datastores_data.append({
             "id": ds_id,
             "name": ds_name,
             "bucket": s3_params.get("bucketName", ""),
+            "has_credentials": has_credentials,
         })
 
     state.selected_filespace = filespace

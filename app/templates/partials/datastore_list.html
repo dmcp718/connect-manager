@@ -36,6 +36,18 @@
                     <span class="datastore-row-bucket">s3://{{ ds.bucket }}</span>
                 </div>
                 <div class="datastore-row-actions">
+                    {% if not ds.has_credentials %}
+                    <button
+                        type="button"
+                        class="btn btn-neon btn-sm"
+                        @click="openModal()"
+                        hx-get="/api/datastores/{{ ds.id }}/credentials-modal"
+                        hx-target="#modal-container"
+                        hx-swap="innerHTML"
+                    >
+                        Connect
+                    </button>
+                    {% endif %}
                     <button
                         type="button"
                         class="btn btn-secondary btn-sm"
