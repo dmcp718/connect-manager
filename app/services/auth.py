@@ -23,6 +23,56 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))  # 8 hours default
 
+# Known weak/default secrets to reject
+_WEAK_SECRETS = {
+    "dev-secret-key-change-in-production",
+    "change-me-in-production",
+    "secret",
+    "jwt-secret",
+    "your-secret-key",
+}
+
+
+def validate_jwt_secret() -> tuple[bool, str]:
+    """
+    Validate JWT_SECRET_KEY is secure.
+    Returns (is_valid, error_message).
+    """
+    secret = os.getenv("JWT_SECRET_KEY", "")
+
+    # Check if empty
+    if not secret:
+        return False, "JWT_SECRET_KEY environment variable is not set"
+
+    # Check against known weak defaults
+    if secret.lower() in _WEAK_SECRETS or secret == "dev-secret-key-change-in-production":
+        return False, "JWT_SECRET_KEY is using a known default value - generate with: openssl rand -hex 32"
+
+    # Check minimum length (64 hex chars = 256 bits for HS256)
+    if len(secret) < 32:
+        return False, "JWT_SECRET_KEY is too short - should be at least 32 characters (recommend 64 hex chars)"
+
+    return True, ""
+
+
+def ensure_jwt_secret_valid() -> None:
+    """
+    Validate JWT secret at startup. Blocks in production, warns in development.
+    """
+    import logging
+
+    is_valid, error = validate_jwt_secret()
+
+    # Determine if we're in production mode
+    is_production = bool(os.getenv("DOMAIN")) or os.getenv("ENVIRONMENT", "").lower() == "production"
+
+    if not is_valid:
+        if is_production:
+            raise RuntimeError(f"SECURITY ERROR: {error}")
+        else:
+            logging.warning(f"SECURITY WARNING: {error}")
+            logging.warning("This is acceptable for development but MUST be fixed before production deployment.")
+
 
 class AuthError(Exception):
     """Authentication error."""

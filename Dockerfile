@@ -32,8 +32,8 @@ ENV VALKEY_HOST=valkey
 ENV VALKEY_PORT=6379
 
 # Authentication settings
-# JWT_SECRET_KEY should be overridden in production (generate with: openssl rand -hex 32)
-ENV JWT_SECRET_KEY=change-me-in-production
+# JWT_SECRET_KEY must be set in production - generate with: openssl rand -hex 32
+# ENV JWT_SECRET_KEY=
 ENV ACCESS_TOKEN_EXPIRE_MINUTES=480
 ENV COOKIE_SECURE=true
 # Set to restrict registration to a specific email domain (optional)
