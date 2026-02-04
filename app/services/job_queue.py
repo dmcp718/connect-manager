@@ -115,6 +115,7 @@ class JobQueue:
         prefix: str,
         filespace_id: str,
         datastore_id: str,
+        user_id: Optional[str] = None,
     ) -> int:
         """Add a new import job to the queue."""
         # Create job in database
@@ -123,6 +124,7 @@ class JobQueue:
             prefix=prefix,
             filespace_id=filespace_id,
             datastore_id=datastore_id,
+            user_id=user_id,
         )
         self.log(f"📋 Job #{job_id} queued: {prefix}")
 

@@ -56,8 +56,12 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
 
     ll_client = None
     try:
-        # Get credentials
-        token = secrets.get_lucidlink_token()
+        # Get credentials - use user-specific token in multi-user mode
+        user_id = job.get("user_id")
+        if user_id:
+            token = secrets.get_user_token(user_id)
+        else:
+            token = secrets.get_lucidlink_token()
         if not token:
             raise ValueError("No API token available - please reconnect in web UI")
 

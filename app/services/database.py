@@ -445,14 +445,15 @@ def create_job(
     prefix: str,
     filespace_id: str,
     datastore_id: str,
+    user_id: Optional[str] = None,
 ) -> int:
     """Create a new import job."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO import_jobs (bucket, prefix, filespace_id, datastore_id, status)
-        VALUES (?, ?, ?, ?, 'pending')
-    """, (bucket, prefix, filespace_id, datastore_id))
+        INSERT INTO import_jobs (bucket, prefix, filespace_id, datastore_id, status, user_id)
+        VALUES (?, ?, ?, ?, 'pending', ?)
+    """, (bucket, prefix, filespace_id, datastore_id, user_id))
     conn.commit()
     job_id = cursor.lastrowid
     conn.close()

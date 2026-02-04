@@ -813,11 +813,13 @@ async def import_folder(
             "error": "No bucket specified",
         })
 
+    user_id = getattr(request.state, "user_id", None)
     job_id = await job_queue.add_job(
         bucket=bucket,
         prefix=prefix,
         filespace_id=filespace_id,
         datastore_id=datastore_id,
+        user_id=user_id,
     )
 
     # Return updated job queue partial
