@@ -379,7 +379,7 @@ class SQSService:
                     "Resource": queue_arn,
                     "Condition": {
                         "ArnLike": {
-                            "aws:SourceArn": f"arn:aws:s3:*:*:{bucket_name}"
+                            "aws:SourceArn": f"arn:aws:s3:::{bucket_name}"
                         },
                         "StringEquals": {
                             "aws:SourceAccount": account_id
