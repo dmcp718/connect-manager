@@ -1167,6 +1167,14 @@ async def delete_sqs_credentials(request: Request):
     return await tab_sqs(request)
 
 
+@app.get("/api/sqs/iam-policy", response_class=HTMLResponse)
+async def sqs_iam_policy_modal(request: Request):
+    """Show modal with example IAM policy for SQS."""
+    return templates.TemplateResponse("partials/sqs_iam_policy_modal.html", {
+        "request": request,
+    })
+
+
 @app.get("/api/sqs/queues/add-modal", response_class=HTMLResponse)
 async def sqs_add_queue_modal(request: Request):
     """Show modal for adding a new SQS queue."""

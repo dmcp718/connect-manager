@@ -1,0 +1,95 @@
+<div class="modal-header">
+    <h3 class="modal-title">IAM policy for SQS</h3>
+    <button type="button" class="btn btn-ghost" @click="closeModal()">
+        <img src="/static/img/icons/x.svg" alt="Close" class="icon icon-sm icon-muted">
+    </button>
+</div>
+<div class="modal-body" x-data="{ copied: false }">
+    <p class="text-muted" style="margin-bottom: var(--space-md); font-size: 0.875rem;">
+        Attach this policy to your IAM user to enable SQS queue management and S3 event notifications.
+        Replace <code>ACCOUNT_ID</code> with your AWS account ID.
+    </p>
+
+    <div class="iam-policy-container">
+        <pre class="iam-policy-code" id="iam-policy-json">{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "SQSQueueManagement",
+            "Effect": "Allow",
+            "Action": [
+                "sqs:CreateQueue",
+                "sqs:DeleteQueue",
+                "sqs:SetQueueAttributes",
+                "sqs:GetQueueAttributes",
+                "sqs:GetQueueUrl",
+                "sqs:ListQueues"
+            ],
+            "Resource": "arn:aws:sqs:*:ACCOUNT_ID:ll-connect-*"
+        },
+        {
+            "Sid": "SQSMessageAccess",
+            "Effect": "Allow",
+            "Action": [
+                "sqs:ReceiveMessage",
+                "sqs:DeleteMessage"
+            ],
+            "Resource": "arn:aws:sqs:*:ACCOUNT_ID:ll-connect-*"
+        },
+        {
+            "Sid": "S3BucketNotifications",
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetBucketNotificationConfiguration",
+                "s3:PutBucketNotificationConfiguration"
+            ],
+            "Resource": "arn:aws:s3:::*"
+        }
+    ]
+}</pre>
+    </div>
+
+    <div class="iam-policy-actions" style="margin-top: var(--space-md); display: flex; gap: var(--space-sm);">
+        <button
+            type="button"
+            class="btn btn-secondary"
+            @click="
+                navigator.clipboard.writeText(document.getElementById('iam-policy-json').textContent);
+                copied = true;
+                setTimeout(() => copied = false, 2000);
+            "
+        >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span x-text="copied ? 'Copied!' : 'Copy to clipboard'"></span>
+        </button>
+        <button
+            type="button"
+            class="btn btn-secondary"
+            @click="
+                const policy = document.getElementById('iam-policy-json').textContent;
+                const blob = new Blob([policy], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'lucidlink-sqs-policy.json';
+                a.click();
+                URL.revokeObjectURL(url);
+            "
+        >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download JSON
+        </button>
+    </div>
+</div>
+<div class="modal-footer">
+    <button type="button" class="btn btn-primary" @click="closeModal()">
+        Done
+    </button>
+</div>

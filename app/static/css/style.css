@@ -1924,6 +1924,36 @@ p {
     margin-bottom: var(--space-xs);
 }
 
+/* IAM Policy Modal */
+.iam-policy-container {
+    background-color: var(--color-gray-90);
+    border: 1px solid var(--color-gray-70);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.iam-policy-code {
+    margin: 0;
+    padding: var(--space-md);
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--color-gray-20);
+    overflow-x: auto;
+    white-space: pre;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.modal-body code {
+    background-color: var(--color-gray-80);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.8125rem;
+    color: var(--color-neon);
+}
+
 /* Alpine x-cloak */
 [x-cloak] {
     display: none !important;
