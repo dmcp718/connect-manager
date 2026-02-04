@@ -679,9 +679,9 @@ def save_sqs_credentials(access_key: str, secret_key_encrypted: str, region: str
         # Per-user credentials: delete existing for this user and insert new
         cursor.execute("DELETE FROM sqs_credentials WHERE user_id = ?", (user_id,))
         cursor.execute("""
-            INSERT INTO sqs_credentials (id, access_key, secret_key_encrypted, region, user_id)
-            VALUES (?, ?, ?, ?, ?)
-        """, (user_id, access_key, secret_key_encrypted, region, user_id))
+            INSERT INTO sqs_credentials (access_key, secret_key_encrypted, region, user_id)
+            VALUES (?, ?, ?, ?)
+        """, (access_key, secret_key_encrypted, region, user_id))
     else:
         # Global credentials (single-user mode): delete all and insert with id=1
         cursor.execute("DELETE FROM sqs_credentials WHERE user_id IS NULL")
@@ -971,6 +971,23 @@ def clear_old_sqs_events(days: int = 7) -> int:
         DELETE FROM sqs_events
         WHERE created_at < datetime('now', '-' || ? || ' days')
     """, (days,))
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def clear_sqs_events(user_id: Optional[str] = None) -> int:
+    """Clear all SQS events (filtered by user via queue's user_id in multi-user mode)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    if user_id:
+        cursor.execute("""
+            DELETE FROM sqs_events
+            WHERE queue_id IN (SELECT id FROM sqs_queues WHERE user_id = ?)
+        """, (user_id,))
+    else:
+        cursor.execute("DELETE FROM sqs_events")
     deleted = cursor.rowcount
     conn.commit()
     conn.close()

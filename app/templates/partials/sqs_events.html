@@ -5,6 +5,13 @@
      hx-swap="outerHTML">
     <div class="card-header">
         <h3 class="card-title">Recent events</h3>
+        <button class="btn btn-sm btn-ghost"
+                hx-delete="/api/sqs/events"
+                hx-target="#sqs-events-section"
+                hx-swap="outerHTML"
+                hx-confirm="Clear all event history?">
+            Clear history
+        </button>
     </div>
     <div class="card-body" style="padding: 0;">
         <div class="sqs-events-list">

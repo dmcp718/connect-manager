@@ -1581,6 +1581,20 @@ async def list_sqs_events(request: Request, limit: int = 50):
     })
 
 
+@app.delete("/api/sqs/events", response_class=HTMLResponse)
+async def clear_sqs_events(request: Request):
+    """Clear all SQS event history."""
+    state = get_session_from_request(request)
+    user_id = getattr(request.state, "user_id", None)
+    deleted = db.clear_sqs_events(user_id=user_id)
+    state.log(f"Cleared {deleted} SQS events")
+
+    return templates.TemplateResponse("partials/sqs_events.html", {
+        "request": request,
+        "sqs_events": [],
+    })
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
