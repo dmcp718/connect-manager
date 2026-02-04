@@ -582,7 +582,7 @@ async def create_datastore(
             "error": f"Failed to validate S3 access: {e}",
         })
 
-    ll_client = LucidLinkClient()
+    ll_client = LucidLinkClient(api_host=state.api_host)
     filespace_id = state.filespaces[state.selected_filespace]
 
     # Determine virtual addressing
@@ -597,6 +597,7 @@ async def create_datastore(
         endpoint=endpoint,
         access_key=access_key,
         secret_key=secret_key,
+        api_host=state.api_host,
         use_virtual_addressing=virtual_addr,
         url_expiration_minutes=url_expiration_minutes or 10080,
     )
@@ -605,7 +606,7 @@ async def create_datastore(
         state.log(f"DataStore '{name}' created")
 
         # Reload datastores to get the new one's ID
-        datastores = await ll_client.list_datastores(state.token, filespace_id)
+        datastores = await ll_client.list_datastores(state.token, filespace_id, api_host=state.api_host)
         state.datastores = {}
         datastores_data = []
         new_datastore_id = None
