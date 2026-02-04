@@ -87,8 +87,9 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         if not job.get("filespace_id") or not job.get("datastore_id"):
             raise ValueError("Job missing filespace_id or datastore_id")
 
-        # Get saved API host
-        api_host = db.get_setting("api_host") or ""
+        # Get saved API host (user-specific in multi-user mode)
+        api_host_key = f"api_host_{user_id}" if user_id else "api_host"
+        api_host = db.get_setting(api_host_key) or ""
 
         await log(f"Using filespace: {job['filespace_id'][:8]}...")
 
