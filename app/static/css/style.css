@@ -1305,6 +1305,13 @@ p {
     white-space: nowrap;
 }
 
+.datastore-item-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    flex-shrink: 0;
+}
+
 /* DataStore Accordion in Browser */
 .datastore-accordion {
     display: flex;
