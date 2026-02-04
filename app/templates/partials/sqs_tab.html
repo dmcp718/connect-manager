@@ -84,36 +84,6 @@
         {% include "partials/sqs_queue_list.html" %}
     </div>
 
-    <!-- Recent Events Section -->
-    {% if sqs_events %}
-    <div class="card sqs-events">
-        <div class="card-header">
-            <h3 class="card-title">Recent events</h3>
-        </div>
-        <div class="card-body" style="padding: 0;">
-            <div class="sqs-events-list">
-                {% for event in sqs_events %}
-                <div class="sqs-event-row">
-                    <span class="sqs-event-time">{{ event.created_at.split('T')[1][:8] if 'T' in event.created_at else event.created_at[-8:] }}</span>
-                    <span class="sqs-event-type">{{ event.event_type.split(':')[-1] if ':' in event.event_type else event.event_type }}</span>
-                    <span class="sqs-event-path" title="{{ event.bucket }}/{{ event.object_key }}">{{ event.bucket }}/{{ event.object_key }}</span>
-                    <span class="sqs-event-status {{ event.status }}" title="{{ event.status }}">
-                        {% if event.status == 'completed' %}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                        {% elif event.status == 'pending' %}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        {% elif event.status == 'processing' %}
-                        <span class="spinner" style="width: 14px; height: 14px;"></span>
-                        {% elif event.status == 'failed' %}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                        {% elif event.status == 'skipped' %}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path></svg>
-                        {% endif %}
-                    </span>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
-    {% endif %}
+    <!-- Recent Events Section (auto-refreshes every 5s) -->
+    {% include "partials/sqs_events.html" %}
 </div>
