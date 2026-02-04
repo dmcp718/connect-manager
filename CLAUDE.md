@@ -28,6 +28,8 @@ Web app for importing S3 objects into LucidLink filespaces via External Data Sto
 ```
 
 ## Production (multi-user branch)
+**IMPORTANT: This server uses a shared external Caddy. Always use `prod-shared` commands.**
+
 ```bash
 # Configure .env
 DOMAIN=connect.example.com
@@ -35,16 +37,14 @@ JWT_SECRET_KEY=<openssl rand -hex 32>
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=secure-password
 
-# Option 1: Built-in Caddy reverse proxy
-./run.sh prod         # HTTPS :443
-./run.sh prod-build   # Rebuild prod
-./run.sh prod-logs    # View logs
-
-# Option 2: External/shared Caddy (no port conflicts)
-./run.sh prod-shared       # No Caddy, use external proxy
+# Shared Caddy setup (THIS IS WHAT WE USE)
+./run.sh prod-shared       # Start (external Caddy handles HTTPS)
 ./run.sh prod-shared-build # Rebuild
-# Connect external Caddy to Docker network:
-# docker network connect lucidlink-connect-web-app_default caddy
+./run.sh prod-logs         # View logs
+
+# Alternative: Built-in Caddy (NOT used - conflicts with shared Caddy on :443)
+# ./run.sh prod
+# ./run.sh prod-build
 ```
 
 ## API Endpoints
