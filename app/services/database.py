@@ -5,8 +5,10 @@ Stores non-sensitive configuration data
 
 import os
 import sqlite3
+import threading
 from contextlib import contextmanager
 from pathlib import Path
+from queue import Queue, Empty
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 import json
@@ -21,15 +23,79 @@ else:
     DB_PATH = Path.home() / ".lucidlink-labs" / "state.db"
 
 
-def get_connection() -> sqlite3.Connection:
-    """Get a database connection, creating the DB if needed."""
+# Connection pool settings
+_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", 10))
+_pool: Queue[sqlite3.Connection] = Queue(maxsize=_POOL_SIZE)
+_pool_lock = threading.Lock()
+_pool_initialized = False
+
+
+def _create_connection() -> sqlite3.Connection:
+    """Create a new database connection with standard settings."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH), timeout=30.0)
+    conn = sqlite3.connect(str(DB_PATH), timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     # Enable WAL mode for better concurrent access
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     return conn
+
+
+def get_connection() -> sqlite3.Connection:
+    """Get a database connection from the pool or create a new one."""
+    global _pool_initialized
+
+    # Initialize pool on first use
+    if not _pool_initialized:
+        with _pool_lock:
+            if not _pool_initialized:
+                _pool_initialized = True
+
+    # Try to get from pool
+    try:
+        conn = _pool.get_nowait()
+        # Test connection is still valid
+        try:
+            conn.execute("SELECT 1")
+            return conn
+        except sqlite3.Error:
+            # Connection is stale, create new one
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return _create_connection()
+    except Empty:
+        # Pool is empty, create new connection
+        return _create_connection()
+
+
+def release_connection(conn: sqlite3.Connection) -> None:
+    """Return a connection to the pool or close it if pool is full."""
+    try:
+        # Only return healthy connections to pool
+        conn.execute("SELECT 1")
+        try:
+            _pool.put_nowait(conn)
+        except Exception:
+            # Pool is full, close the connection
+            conn.close()
+    except sqlite3.Error:
+        # Connection is unhealthy, close it
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+@contextmanager
+def pooled_connection():
+    """Context manager for pooled database connections."""
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        release_connection(conn)
 
 
 @contextmanager
@@ -44,7 +110,7 @@ def transaction():
         conn.rollback()
         raise
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def init_db() -> None:
@@ -481,7 +547,7 @@ def create_job(
     """, (bucket, prefix, filespace_id, datastore_id, user_id))
     conn.commit()
     job_id = cursor.lastrowid
-    conn.close()
+    release_connection(conn)
     return job_id
 
 
@@ -497,7 +563,7 @@ def get_job(job_id: int, user_id: Optional[str] = None) -> Optional[Dict[str, An
     else:
         cursor.execute("SELECT * FROM import_jobs WHERE id = ?", (job_id,))
     row = cursor.fetchone()
-    conn.close()
+    release_connection(conn)
     return dict(row) if row else None
 
 
@@ -548,7 +614,7 @@ def update_job(
         )
         conn.commit()
 
-    conn.close()
+    release_connection(conn)
 
 
 def list_jobs(limit: int = 50, user_id: Optional[str] = None) -> list:
@@ -631,8 +697,35 @@ def get_running_job() -> Optional[Dict[str, Any]]:
         LIMIT 1
     """)
     row = cursor.fetchone()
-    conn.close()
+    release_connection(conn)
     return dict(row) if row else None
+
+
+def timeout_stale_jobs(hours: int = 1) -> int:
+    """Mark jobs running longer than specified hours as failed.
+
+    This prevents zombie jobs that may have crashed without updating their status.
+
+    Args:
+        hours: Number of hours after which a running job is considered stale
+
+    Returns:
+        Number of jobs marked as timed out
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE import_jobs
+        SET status = 'failed',
+            error_message = 'Job timed out after ' || ? || ' hour(s) - worker may have crashed',
+            completed_at = CURRENT_TIMESTAMP
+        WHERE status = 'running'
+        AND started_at < datetime('now', '-' || ? || ' hours')
+    """, (hours, hours))
+    timed_out = cursor.rowcount
+    conn.commit()
+    release_connection(conn)
+    return timed_out
 
 
 def cancel_job(job_id: int, user_id: Optional[str] = None) -> bool:
@@ -894,8 +987,34 @@ def create_sqs_event(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (event_id, queue_id, message_id, event_type, bucket, object_key, object_size, event_time))
     conn.commit()
-    conn.close()
+    release_connection(conn)
     return event_id
+
+
+def sqs_event_exists(message_id: str, queue_id: str, object_key: str) -> bool:
+    """Check if an SQS event with this message_id and object_key already exists.
+
+    Used for idempotent processing - prevents duplicate imports when SQS
+    redelivers messages (e.g., after visibility timeout or failed deletion).
+
+    Args:
+        message_id: SQS message ID
+        queue_id: Queue ID the message came from
+        object_key: S3 object key from the event
+
+    Returns:
+        True if event already exists (skip processing), False otherwise
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT 1 FROM sqs_events
+        WHERE message_id = ? AND queue_id = ? AND object_key = ?
+        LIMIT 1
+    """, (message_id, queue_id, object_key))
+    exists = cursor.fetchone() is not None
+    release_connection(conn)
+    return exists
 
 
 def update_sqs_event(

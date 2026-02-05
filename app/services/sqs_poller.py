@@ -227,6 +227,9 @@ async def process_s3_event(
     """
     Process a single S3 event - create import job.
 
+    Uses idempotent processing to prevent duplicate imports when SQS
+    redelivers messages (e.g., after visibility timeout or failed deletion).
+
     Args:
         ctx: ARQ context
         event: Parsed S3 event
@@ -244,6 +247,11 @@ async def process_s3_event(
     object_size = event.get("size")
     event_type = event.get("event_type", "")
     event_time = event.get("event_time")
+
+    # Idempotency check: skip if we've already processed this exact event
+    # Uses idx_sqs_events_message_id index for fast lookup
+    if db.sqs_event_exists(message_id, queue_id, object_key):
+        return  # Already processed, skip silently
 
     # Generate unique event ID
     event_id = f"{uuid.uuid4().hex}"

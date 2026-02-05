@@ -250,12 +250,25 @@ async def cleanup_old_events(ctx: dict[str, Any]) -> int:
     return deleted
 
 
+async def timeout_stale_jobs(ctx: dict[str, Any]) -> int:
+    """Mark stale running jobs as failed (runs every 15 minutes).
+
+    Jobs running for more than 1 hour are considered stale - likely the worker
+    crashed or was terminated without updating the job status.
+    """
+    timed_out = db.timeout_stale_jobs(hours=1)
+    if timed_out > 0:
+        await publish_log(ctx, f"Timeout: marked {timed_out} stale job(s) as failed")
+    return timed_out
+
+
 class WorkerSettings:
     """ARQ worker settings."""
     functions = [import_job]
     cron_jobs = [
         sqs_poll_cron,  # SQS polling every 10 seconds
         cron(cleanup_old_events, hour={0, 6, 12, 18}, minute=0),  # Cleanup every 6 hours
+        cron(timeout_stale_jobs, minute={0, 15, 30, 45}),  # Timeout check every 15 minutes
     ]
     on_startup = on_startup
     on_shutdown = on_shutdown
