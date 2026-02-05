@@ -1,5 +1,5 @@
 """
-LucidLink Labs | CONNECT Manager - S3 to LucidLink Integrator
+LucidLink Labs | LucidLink Connect Manager - S3 to LucidLink Integrator
 FastAPI + HTMX Web Application
 DataStore-centric architecture with multi-user support
 """
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="LucidLink Labs | CONNECT Manager",
+    title="LucidLink Labs | LucidLink Connect Manager",
     description="S3 to LucidLink Integrator - Multi-user",
     lifespan=lifespan
 )
