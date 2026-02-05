@@ -21,6 +21,7 @@ from services.user_state import UserSession, user_state_manager, get_user_sessio
 from services.job_queue import job_queue
 from services import database as db
 from services import auth as auth_service
+from services.activity_logger import ActivityLogger
 from routes.auth import router as auth_router, get_current_user, get_current_user_optional
 from middleware.auth import AuthMiddleware
 from models.user import TokenData
@@ -158,6 +159,9 @@ async def load_filespaces(
     if isinstance(result, str):
         # Error occurred
         state.log(f"Error loading filespaces: {result}")
+        user_id = getattr(request.state, "user_id", None)
+        # Log connection error
+        ActivityLogger.app_error(f"Failed to connect: {result}", user_id=user_id)
         return templates.TemplateResponse("partials/filespace_select.html", {
             "request": request,
             "error": result,
@@ -198,6 +202,13 @@ async def load_filespaces(
 
         state.selected_filespace = selected_filespace
         state.log(f"Loaded {len(ds_result)} datastores for {selected_filespace}")
+
+        # Log successful connection to activity log
+        ActivityLogger.app_connection(
+            user_id,
+            selected_filespace,
+            len(ds_result),
+        )
 
     return templates.TemplateResponse("partials/filespace_select.html", {
         "request": request,
@@ -513,9 +524,12 @@ async def delete_datastore(request: Request, datastore_id: str):
     # Also remove any saved credentials for this datastore
     state.remove_datastore_credentials(datastore_id)
 
+    # Log DataStore deletion
+    user_id = getattr(request.state, "user_id", None)
+    ActivityLogger.app_datastore_deleted(user_id, ds_name)
+
     # Return updated list
     datastores_data = []
-    user_id = getattr(request.state, "user_id", None)
     for name, ds in state.datastores.items():
         s3_params = ds.get("s3StorageParams", {})
         ds_id = ds.get("id")
@@ -644,6 +658,11 @@ async def create_datastore(
                 aws_access_key=access_key,
                 aws_secret_key=secret_key,
             )
+
+        # Log DataStore creation
+        ActivityLogger.app_datastore_created(
+            user_id, name, bucket, state.selected_filespace
+        )
 
         # Return success with out-of-band swap to close modal and update list
         return templates.TemplateResponse("partials/datastore_create_success.html", {
@@ -823,6 +842,9 @@ async def import_folder(
         datastore_id=datastore_id,
         user_id=user_id,
     )
+
+    # Log job queued
+    ActivityLogger.job_queued(user_id, job_id, prefix or "/")
 
     # Return updated job queue partial
     return templates.TemplateResponse("partials/job_added.html", {
@@ -1017,12 +1039,168 @@ async def tab_browser(request: Request):
 
 
 @app.get("/api/tab/logs", response_class=HTMLResponse)
-async def tab_logs(request: Request):
-    """Return logs tab content."""
-    state = get_session_from_request(request)
-    return templates.TemplateResponse("partials/logs.html", {
+async def tab_logs(request: Request, subtab: str = "app"):
+    """Return logs tab content with sub-tabs."""
+    _ = get_session_from_request(request)  # Verify authenticated
+    user_id = getattr(request.state, "user_id", None)
+    is_admin = getattr(request.state, "is_admin", False)
+
+    # Validate subtab
+    valid_subtabs = ["app", "jobs", "sqs"]
+    if is_admin:
+        valid_subtabs.append("admin")
+    if subtab not in valid_subtabs:
+        subtab = "app"
+
+    return templates.TemplateResponse("partials/logs_tab.html", {
         "request": request,
-        "logs": state.logs,
+        "active_subtab": subtab,
+        "is_admin": is_admin,
+    })
+
+
+@app.get("/api/logs/app", response_class=HTMLResponse)
+async def logs_app(request: Request, limit: int = 100, offset: int = 0):
+    """Return application logs content."""
+    _ = get_session_from_request(request)  # Verify authenticated
+    user_id = getattr(request.state, "user_id", None)
+
+    logs = db.list_activity_logs(
+        category=ActivityLogger.APP,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+    total = db.count_activity_logs(category=ActivityLogger.APP, user_id=user_id)
+
+    return templates.TemplateResponse("partials/logs_app.html", {
+        "request": request,
+        "logs": logs,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "category": "app",
+    })
+
+
+@app.get("/api/logs/jobs", response_class=HTMLResponse)
+async def logs_jobs(request: Request, limit: int = 100, offset: int = 0):
+    """Return jobs logs content."""
+    _ = get_session_from_request(request)  # Verify authenticated
+    user_id = getattr(request.state, "user_id", None)
+
+    logs = db.list_activity_logs(
+        category=ActivityLogger.JOB,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+    total = db.count_activity_logs(category=ActivityLogger.JOB, user_id=user_id)
+
+    return templates.TemplateResponse("partials/logs_jobs.html", {
+        "request": request,
+        "logs": logs,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "category": "jobs",
+    })
+
+
+@app.get("/api/logs/sqs", response_class=HTMLResponse)
+async def logs_sqs(request: Request, limit: int = 100, offset: int = 0):
+    """Return SQS logs content."""
+    _ = get_session_from_request(request)  # Verify authenticated
+    user_id = getattr(request.state, "user_id", None)
+
+    logs = db.list_activity_logs(
+        category=ActivityLogger.SQS,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+    total = db.count_activity_logs(category=ActivityLogger.SQS, user_id=user_id)
+
+    return templates.TemplateResponse("partials/logs_sqs.html", {
+        "request": request,
+        "logs": logs,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "category": "sqs",
+    })
+
+
+@app.get("/api/logs/admin", response_class=HTMLResponse)
+async def logs_admin(request: Request, limit: int = 100, offset: int = 0):
+    """Return admin activity logs (admin only)."""
+    _ = get_session_from_request(request)  # Verify authenticated
+    is_admin = getattr(request.state, "is_admin", False)
+
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # Admin view: show all users' admin logs
+    logs = db.list_activity_logs(
+        category=ActivityLogger.ADMIN,
+        limit=limit,
+        offset=offset,
+        include_all_users=True,
+    )
+    total = db.count_activity_logs(category=ActivityLogger.ADMIN, include_all_users=True)
+
+    return templates.TemplateResponse("partials/logs_admin.html", {
+        "request": request,
+        "logs": logs,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "category": "admin",
+    })
+
+
+@app.post("/api/logs/clear/{category}", response_class=HTMLResponse)
+async def clear_logs_category(request: Request, category: str):
+    """Clear logs by category."""
+    _ = get_session_from_request(request)  # Verify authenticated
+    user_id = getattr(request.state, "user_id", None)
+    is_admin = getattr(request.state, "is_admin", False)
+
+    # Validate category
+    valid_categories = ["app", "jobs", "sqs"]
+    if is_admin:
+        valid_categories.append("admin")
+
+    if category not in valid_categories:
+        raise HTTPException(status_code=400, detail="Invalid category")
+
+    # Map URL category to database category
+    db_category = category if category != "jobs" else "job"
+
+    # For admin logs, only admins can clear and it clears all users
+    if category == "admin":
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Admin access required")
+        db.clear_activity_logs(category=db_category)
+    else:
+        # Clear only the user's own logs for this category
+        db.clear_activity_logs(category=db_category, user_id=user_id)
+
+    # Return empty logs template for the category
+    template_map = {
+        "app": "partials/logs_app.html",
+        "jobs": "partials/logs_jobs.html",
+        "sqs": "partials/logs_sqs.html",
+        "admin": "partials/logs_admin.html",
+    }
+
+    return templates.TemplateResponse(template_map[category], {
+        "request": request,
+        "logs": [],
+        "total": 0,
+        "limit": 100,
+        "offset": 0,
+        "category": category,
     })
 
 
@@ -1120,6 +1298,9 @@ async def save_sqs_credentials(
         db.save_sqs_credentials(access_key, secret_key_ref, region, user_id=user_id)
         state.log("SQS credentials saved")
 
+        # Log SQS credentials saved
+        ActivityLogger.sqs_credentials_saved(user_id, region)
+
         # Return the queue list section
         sqs_queues = db.list_sqs_queues(user_id=user_id)
         browsable_datastores = state.get_browsable_datastores()
@@ -1165,6 +1346,9 @@ async def delete_sqs_credentials(request: Request):
 
     db.delete_sqs_credentials(user_id=user_id)
     state.log("SQS credentials removed")
+
+    # Log SQS credentials deleted
+    ActivityLogger.sqs_credentials_deleted(user_id)
 
     return await tab_sqs(request)
 
@@ -1352,6 +1536,9 @@ async def add_sqs_queue(
         action = "created" if mode == "create" else "added"
         state.log(f"SQS queue '{queue_info['name']}' {action} for automatic imports")
 
+        # Log SQS queue creation
+        ActivityLogger.sqs_queue_created(user_id, queue_info["name"], queue_id)
+
         # Return updated queue list
         sqs_queues = db.list_sqs_queues(user_id=user_id)
         for queue in sqs_queues:
@@ -1453,6 +1640,9 @@ async def delete_sqs_queue(request: Request, queue_id: str):
         state.log(f"Queue '{queue_name}' removed (some AWS cleanup failed: {'; '.join(cleanup_errors)})")
     else:
         state.log(f"Queue '{queue_name}' fully deleted")
+
+    # Log SQS queue deletion
+    ActivityLogger.sqs_queue_deleted(user_id, queue_name, queue_id)
 
     # Return updated queue list
     sqs_queues = db.list_sqs_queues(user_id=user_id)

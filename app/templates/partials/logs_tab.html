@@ -1,0 +1,52 @@
+<div class="logs-container" x-data="{ activeSubtab: '{{ active_subtab }}' }">
+    <!-- Sub-tab navigation -->
+    <div class="logs-subtabs">
+        <button
+            class="logs-subtab"
+            :class="{ 'active': activeSubtab === 'app' }"
+            @click="activeSubtab = 'app'"
+            hx-get="/api/logs/app"
+            hx-target="#logs-subtab-content"
+            hx-swap="innerHTML"
+        >
+            Application
+        </button>
+        <button
+            class="logs-subtab"
+            :class="{ 'active': activeSubtab === 'jobs' }"
+            @click="activeSubtab = 'jobs'"
+            hx-get="/api/logs/jobs"
+            hx-target="#logs-subtab-content"
+            hx-swap="innerHTML"
+        >
+            Jobs
+        </button>
+        <button
+            class="logs-subtab"
+            :class="{ 'active': activeSubtab === 'sqs' }"
+            @click="activeSubtab = 'sqs'"
+            hx-get="/api/logs/sqs"
+            hx-target="#logs-subtab-content"
+            hx-swap="innerHTML"
+        >
+            AWS SQS
+        </button>
+        {% if is_admin %}
+        <button
+            class="logs-subtab"
+            :class="{ 'active': activeSubtab === 'admin' }"
+            @click="activeSubtab = 'admin'"
+            hx-get="/api/logs/admin"
+            hx-target="#logs-subtab-content"
+            hx-swap="innerHTML"
+        >
+            Admin activity
+        </button>
+        {% endif %}
+    </div>
+
+    <!-- Sub-tab content -->
+    <div id="logs-subtab-content" hx-get="/api/logs/{{ active_subtab }}" hx-trigger="load" hx-swap="innerHTML">
+        <div class="logs-loading">Loading...</div>
+    </div>
+</div>

@@ -16,6 +16,7 @@ from services import database as db
 from services import secrets
 from services.sqs_service import SQSService, SQSError
 from services.lucidlink import LucidLinkClient
+from services.activity_logger import ActivityLogger
 
 # Lock key for distributed polling
 POLL_LOCK_KEY = "sqs:poll:lock"
@@ -317,12 +318,19 @@ async def process_s3_event(
         # Ensure folder structure exists
         structure_ok, structure_error = await ll_client.ensure_structure(ll_path)
 
+        # Get queue name for logging
+        queue_name = queue.get("name", queue_id[:8])
+
         if structure_ok:
             # Import the file
             code, error_msg = await ll_client.import_file(object_key, ll_path)
 
             if code in [200, 201]:
                 db.update_sqs_event(event_id, status="completed")
+                # Log successful SQS event processing
+                ActivityLogger.sqs_event_processed(
+                    user_id, queue_id, queue_name, object_key, "success"
+                )
             elif code in [400, 409] and "already exists" in error_msg.lower():
                 db.update_sqs_event(event_id, status="skipped", error_message="Already exists")
             else:
@@ -331,17 +339,33 @@ async def process_s3_event(
                     status="failed",
                     error_message=f"HTTP {code}: {error_msg[:150]}",
                 )
+                # Log failed SQS event
+                ActivityLogger.sqs_event_processed(
+                    user_id, queue_id, queue_name, object_key, "failed",
+                    error=f"HTTP {code}: {error_msg[:100]}"
+                )
         else:
             db.update_sqs_event(
                 event_id,
                 status="failed",
                 error_message=f"Failed to create folder: {structure_error[:150]}",
             )
+            # Log failed SQS event
+            ActivityLogger.sqs_event_processed(
+                user_id, queue_id, queue_name, object_key, "failed",
+                error=f"Folder creation failed: {structure_error[:100]}"
+            )
 
         await ll_client.close()
 
     except Exception as e:
         db.update_sqs_event(event_id, status="failed", error_message=str(e)[:200])
+        # Log failed SQS event
+        queue_name = queue.get("name", queue_id[:8])
+        ActivityLogger.sqs_event_processed(
+            user_id, queue_id, queue_name, object_key, "failed",
+            error=str(e)[:100]
+        )
 
 
 # Cron job configuration for ARQ

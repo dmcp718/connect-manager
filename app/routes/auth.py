@@ -12,7 +12,22 @@ from fastapi.templating import Jinja2Templates
 
 from services import auth
 from services import database as db
+from services.activity_logger import ActivityLogger
 from models.user import User, TokenData
+
+
+def get_client_ip(request: Request) -> str:
+    """Get client IP address from request."""
+    # Check X-Forwarded-For header (for proxied requests)
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    # Check X-Real-IP header
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip
+    # Fall back to client host
+    return request.client.host if request.client else "unknown"
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 templates = Jinja2Templates(directory="templates")
@@ -100,8 +115,11 @@ async def login(
     password: str = Form(...),
 ):
     """Authenticate user and set session cookie."""
+    client_ip = get_client_ip(request)
     user, error = auth.authenticate_user(email, password)
     if error:
+        # Log failed login attempt
+        ActivityLogger.admin_login_failed(email, error, ip_address=client_ip)
         raise HTTPException(status_code=401, detail=error)
 
     # Create token
@@ -110,6 +128,9 @@ async def login(
         email=user["email"],
         is_admin=user.get("is_admin", False),
     )
+
+    # Log successful login
+    ActivityLogger.admin_login(user["id"], user["email"], ip_address=client_ip)
 
     # Set cookie
     set_auth_cookie(response, token)
@@ -123,6 +144,8 @@ async def logout(request: Request, response: Response):
     user = get_current_user_optional(request)
     if user:
         auth.logout_user(user.session_id)
+        # Log logout
+        ActivityLogger.admin_logout(user.user_id, user.email, ip_address=get_client_ip(request))
 
     clear_auth_cookie(response)
     return {"status": "success"}
@@ -200,6 +223,13 @@ async def change_password(
     if not success:
         raise HTTPException(status_code=400, detail=error)
 
+    # Log password change
+    ActivityLogger.admin_password_changed(
+        current_user.user_id,
+        current_user.email,
+        ip_address=get_client_ip(request)
+    )
+
     return {"status": "success", "message": "Password changed. Please log in again."}
 
 
@@ -237,6 +267,15 @@ async def invite_user(
             "request": request,
             "error": error,
         })
+
+    # Log user creation
+    ActivityLogger.admin_user_created(
+        admin.user_id,
+        email,
+        user_id,
+        is_admin=is_admin,
+        ip_address=get_client_ip(request)
+    )
 
     # Return the modal with success state showing temp password
     return templates.TemplateResponse("partials/invite_user_modal.html", {
@@ -282,6 +321,16 @@ async def change_user_role(
     users = db.list_users()
     target_user = db.get_user_by_id(user_id)
     role_action = "promoted to admin" if is_admin else "demoted to user"
+
+    # Log role change
+    ActivityLogger.admin_role_changed(
+        admin.user_id,
+        user_id,
+        target_user["email"],
+        "admin" if is_admin else "user",
+        ip_address=get_client_ip(request)
+    )
+
     return templates.TemplateResponse("partials/account_tab.html", {
         "request": request,
         "current_user": current_user,
@@ -311,6 +360,10 @@ async def delete_user(
             "error": "Cannot delete your own account",
         })
 
+    # Get user info before deletion for logging
+    deleted_user = db.get_user_by_id(user_id)
+    deleted_email = deleted_user["email"] if deleted_user else "unknown"
+
     # Revoke all sessions first
     db.revoke_all_user_sessions(user_id)
 
@@ -323,6 +376,14 @@ async def delete_user(
             "is_admin": True,
             "error": "User not found",
         })
+
+    # Log user deletion
+    ActivityLogger.admin_user_deleted(
+        admin.user_id,
+        deleted_email,
+        user_id,
+        ip_address=get_client_ip(request)
+    )
 
     # Return updated users tab
     users = db.list_users()
