@@ -10,7 +10,7 @@ import json
 import os
 from typing import Any
 
-from arq import create_pool
+from arq import create_pool, cron
 from arq.connections import RedisSettings
 
 from services import database as db
@@ -242,10 +242,21 @@ async def on_shutdown(ctx: dict) -> None:
     pass
 
 
+async def cleanup_old_events(ctx: dict[str, Any]) -> int:
+    """Periodic cleanup of old SQS events (runs every 6 hours)."""
+    deleted = db.clear_old_sqs_events(days=7)
+    if deleted > 0:
+        await publish_log(ctx, f"Cleanup: deleted {deleted} old SQS events")
+    return deleted
+
+
 class WorkerSettings:
     """ARQ worker settings."""
     functions = [import_job]
-    cron_jobs = [sqs_poll_cron]  # SQS polling every 30 seconds
+    cron_jobs = [
+        sqs_poll_cron,  # SQS polling every 10 seconds
+        cron(cleanup_old_events, hour={0, 6, 12, 18}, minute=0),  # Cleanup every 6 hours
+    ]
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings = get_redis_settings()

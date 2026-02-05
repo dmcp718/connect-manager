@@ -5,6 +5,7 @@ Stores non-sensitive configuration data
 
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -29,6 +30,21 @@ def get_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     return conn
+
+
+@contextmanager
+def transaction():
+    """Context manager for atomic database transactions."""
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def init_db() -> None:
@@ -170,6 +186,15 @@ def init_db() -> None:
             FOREIGN KEY (queue_id) REFERENCES sqs_queues(id)
         )
     """)
+
+    # Performance indexes
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_import_jobs_status ON import_jobs(status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_import_jobs_user_id ON import_jobs(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_import_jobs_status_user ON import_jobs(status, user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sqs_events_status ON sqs_events(status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sqs_events_queue_id ON sqs_events(queue_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sqs_events_queue_status ON sqs_events(queue_id, status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sqs_events_message_id ON sqs_events(message_id)")
 
     # Migration: Add user_id columns to existing tables if they don't exist
     _migrate_add_user_id_columns(cursor)
@@ -834,22 +859,19 @@ def update_sqs_queue(
 
 def delete_sqs_queue(queue_id: str, user_id: Optional[str] = None) -> bool:
     """Delete an SQS queue configuration (filtered by user in multi-user mode)."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    # First delete associated events
-    cursor.execute("DELETE FROM sqs_events WHERE queue_id = ?", (queue_id,))
-    # Then delete the queue
-    if user_id:
-        cursor.execute(
-            "DELETE FROM sqs_queues WHERE id = ? AND user_id = ?",
-            (queue_id, user_id)
-        )
-    else:
-        cursor.execute("DELETE FROM sqs_queues WHERE id = ?", (queue_id,))
-    deleted = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
-    return deleted
+    with transaction() as conn:
+        cursor = conn.cursor()
+        # First delete associated events
+        cursor.execute("DELETE FROM sqs_events WHERE queue_id = ?", (queue_id,))
+        # Then delete the queue
+        if user_id:
+            cursor.execute(
+                "DELETE FROM sqs_queues WHERE id = ? AND user_id = ?",
+                (queue_id, user_id)
+            )
+        else:
+            cursor.execute("DELETE FROM sqs_queues WHERE id = ?", (queue_id,))
+        return cursor.rowcount > 0
 
 
 # ============== SQS Events ==============
