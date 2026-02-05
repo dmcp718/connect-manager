@@ -787,7 +787,7 @@ async def import_file(
 @app.post("/api/import/folder", response_class=HTMLResponse)
 async def import_folder(
     request: Request,
-    prefix: str = Form(...),
+    prefix: str = Form(""),
     datastore_id: str = Form(...),
 ):
     """Add a folder import job to the queue."""

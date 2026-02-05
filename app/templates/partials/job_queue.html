@@ -54,7 +54,7 @@
                             {% elif job.status == 'cancelled' %}🛑
                             {% endif %}
                         </span>
-                        <span class="job-prefix">{{ job.prefix }}</span>
+                        <span class="job-prefix">{{ job.prefix or 'Import all' }}</span>
                     </div>
                     <div class="job-meta">
                         <span class="job-bucket">{{ job.bucket }}</span>

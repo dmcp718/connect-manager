@@ -1325,22 +1325,6 @@ p {
     overflow: hidden;
 }
 
-.datastore-header-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-}
-
-.datastore-header-row .datastore-header {
-    flex: 1;
-    border-radius: var(--radius-lg) 0 0 0;
-}
-
-.datastore-header-row .datastore-import-all {
-    margin-right: var(--space-md);
-    white-space: nowrap;
-}
-
 .datastore-header {
     width: 100%;
     display: flex;
@@ -1351,6 +1335,12 @@ p {
     border: none;
     cursor: pointer;
     transition: background-color var(--transition-fast);
+}
+
+.datastore-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
 }
 
 .datastore-header:hover {
