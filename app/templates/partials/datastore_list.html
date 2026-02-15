@@ -32,7 +32,12 @@
             {% for ds in datastores %}
             <div class="datastore-row">
                 <div class="datastore-row-info">
-                    <span class="datastore-row-name">{{ ds.name }}</span>
+                    <span class="datastore-row-name">
+                        {{ ds.name }}
+                        {% if ds.has_credentials %}
+                        <span class="badge badge-success" title="S3 credentials configured">S3</span>
+                        {% endif %}
+                    </span>
                     <span class="datastore-row-bucket">s3://{{ ds.bucket }}</span>
                 </div>
                 <div class="datastore-row-actions">
@@ -44,8 +49,21 @@
                         hx-get="/api/datastores/{{ ds.id }}/credentials-modal"
                         hx-target="#modal-container"
                         hx-swap="innerHTML"
+                        title="Add S3 credentials to enable browsing"
                     >
-                        Connect
+                        Configure
+                    </button>
+                    {% else %}
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        @click="openModal()"
+                        hx-get="/api/datastores/{{ ds.id }}/credentials-modal"
+                        hx-target="#modal-container"
+                        hx-swap="innerHTML"
+                        title="Update S3 credentials"
+                    >
+                        Update
                     </button>
                     {% endif %}
                     <button

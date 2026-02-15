@@ -1,0 +1,191 @@
+<!-- Add User Modal -->
+<div class="modal-header">
+    <h3>Add user</h3>
+    <button class="modal-close" @click="closeModal()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+    </button>
+</div>
+
+<div class="modal-body">
+    {% if temp_password %}
+    <!-- Success state: show temporary password -->
+    <div class="invite-success">
+        <div class="alert alert-success">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            User created
+        </div>
+
+        <div class="credentials-box" x-data="{ copied: false }">
+            <button
+                class="copy-btn"
+                title="Copy credentials"
+                @click="
+                    navigator.clipboard.writeText('Email: {{ email }}\nPassword: {{ temp_password }}');
+                    copied = true;
+                    setTimeout(() => copied = false, 2000);
+                "
+            >
+                <svg x-show="!copied" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <svg x-show="copied" x-cloak width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+            </button>
+            <p>Share these credentials with the new user:</p>
+            <div class="credential-row">
+                <label>Email</label>
+                <code>{{ email }}</code>
+            </div>
+            <div class="credential-row">
+                <label>Temporary password</label>
+                <code class="password-code">{{ temp_password }}</code>
+            </div>
+            <p class="text-muted">The user should change their password after first login.</p>
+        </div>
+
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" @click="closeModal()">Done</button>
+        </div>
+    </div>
+    {% else %}
+    <!-- Form state -->
+    <form hx-post="/api/auth/users/invite" hx-target="#modal-container" hx-swap="innerHTML">
+        {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+        {% endif %}
+
+        <div class="form-group">
+            <label for="email">Email address</label>
+            <input
+                type="email"
+                id="email"
+                name="email"
+                placeholder="user@example.com"
+                required
+                autocomplete="off"
+            >
+        </div>
+
+        <div class="form-group">
+            <label class="checkbox-label">
+                <input type="checkbox" name="is_admin" value="true">
+                <span>Grant admin privileges</span>
+            </label>
+            <small class="form-hint">Admins can manage users and access all settings</small>
+        </div>
+
+        <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" @click="closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Create user</button>
+        </div>
+    </form>
+    {% endif %}
+</div>
+
+<style>
+    .invite-success .alert {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .credentials-box {
+        position: relative;
+        background: var(--color-charcoal);
+        border: 1px solid var(--color-gray-70);
+        border-radius: var(--radius-md);
+        padding: 1.25rem;
+        margin: 1.5rem 0;
+    }
+
+    .copy-btn {
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        background: var(--color-gray-80);
+        border: 1px solid var(--color-gray-70);
+        border-radius: var(--radius-sm);
+        color: var(--color-gray-40);
+        cursor: pointer;
+        transition: all 150ms ease;
+    }
+
+    .copy-btn:hover {
+        background: var(--color-gray-70);
+        color: var(--color-neon);
+        border-color: var(--color-neon);
+    }
+
+    .credentials-box p {
+        margin: 0 0 1rem 0;
+        color: var(--color-gray-30);
+    }
+
+    .credentials-box p.text-muted {
+        margin: 1rem 0 0 0;
+        font-size: 0.8rem;
+        color: var(--color-gray-50);
+    }
+
+    .credential-row {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        margin-bottom: 1rem;
+    }
+
+    .credential-row:last-of-type {
+        margin-bottom: 0;
+    }
+
+    .credential-row label {
+        font-size: 0.6875rem;
+        font-weight: 600;
+        color: var(--color-gray-50);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .credential-row code {
+        font-family: 'SF Mono', Monaco, monospace;
+        font-size: 0.9375rem;
+        padding: 0.625rem 0.875rem;
+        background: var(--color-gray-90);
+        border: 1px solid var(--color-gray-70);
+        border-radius: var(--radius-sm);
+        color: var(--color-neon);
+    }
+
+    .password-code {
+        user-select: all;
+        cursor: text;
+    }
+
+    .checkbox-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        color: var(--color-white);
+    }
+
+    .checkbox-label input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--color-neon);
+        cursor: pointer;
+    }
+</style>

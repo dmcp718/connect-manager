@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any, Union
 
 import httpx
 
-LL_HOST = os.getenv("LL_API_HOST", "https://dev-admin-api.solutions-eng.online:8443/api/v1")
+LL_HOST = os.getenv("LL_API_HOST", "https://admin-api.solutions-eng.online/api/v1")
 
 
 class LucidLinkClient:

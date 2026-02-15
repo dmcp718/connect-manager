@@ -54,7 +54,7 @@
                             {% elif job.status == 'cancelled' %}🛑
                             {% endif %}
                         </span>
-                        <span class="job-prefix">{{ job.prefix }}</span>
+                        <span class="job-prefix">{{ job.prefix or 'Import all' }}</span>
                     </div>
                     <div class="job-meta">
                         <span class="job-bucket">{{ job.bucket }}</span>
@@ -112,7 +112,7 @@
         {% else %}
         <div class="job-empty">
             <p>No import jobs</p>
-            <p class="text-muted">Use "Import all" on a folder to queue a job</p>
+            <p class="text-muted">Use "+ Queue" on a folder in the Browser tab to queue a job</p>
         </div>
         {% endif %}
     </div>

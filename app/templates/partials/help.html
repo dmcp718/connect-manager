@@ -82,7 +82,12 @@
 
             <div class="help-section">
                 <h4 class="help-heading">Saved DataStores</h4>
-                <p>DataStores with saved AWS credentials appear in the "Saved DataStores" section. These credentials are stored locally and allow you to browse the S3 bucket without re-entering them.</p>
+                <p>DataStores with saved AWS credentials appear in the "Saved DataStores" section. These credentials are <strong>encrypted at rest</strong> and allow you to browse the S3 bucket without re-entering them.</p>
+            </div>
+
+            <div class="help-section">
+                <h4 class="help-heading">Configure existing DataStores</h4>
+                <p>To add or update S3 credentials for an existing DataStore, click the <strong>Configure</strong> or <strong>Update</strong> button next to the DataStore in the list. DataStores with saved credentials show an <strong>S3</strong> badge.</p>
             </div>
         </div>
     </div>
@@ -147,8 +152,8 @@
                     <li><code>sqs:SetQueueAttributes</code> - Set queue policy</li>
                     <li><code>sqs:ReceiveMessage</code> - Receive S3 events</li>
                     <li><code>sqs:DeleteMessage</code> - Delete processed messages</li>
-                    <li><code>s3:GetBucketNotificationConfiguration</code> - Read bucket notifications</li>
-                    <li><code>s3:PutBucketNotificationConfiguration</code> - Configure bucket notifications</li>
+                    <li><code>s3:GetBucketNotification</code> - Read bucket notifications</li>
+                    <li><code>s3:PutBucketNotification</code> - Configure bucket notifications</li>
                 </ul>
             </div>
 

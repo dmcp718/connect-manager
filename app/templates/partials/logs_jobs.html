@@ -1,0 +1,69 @@
+<div class="logs-category-content">
+    <div class="logs-category-header">
+        <div class="logs-category-info">
+            <span class="logs-count">{{ total }} entries</span>
+        </div>
+        <button
+            class="btn btn-ghost btn-sm"
+            hx-post="/api/logs/clear/jobs"
+            hx-target="#logs-subtab-content"
+            hx-swap="innerHTML"
+            hx-confirm="Clear all job logs?"
+            {% if total == 0 %}disabled{% endif %}
+        >
+            Clear
+        </button>
+    </div>
+    <div class="logs-list">
+        {% if logs %}
+            {% for log in logs %}
+            <div class="log-entry log-{{ log.level }}">
+                <div class="log-entry-header">
+                    <span class="log-timestamp">{{ log.created_at[:19] }}</span>
+                    <span class="log-action">{{ log.action }}</span>
+                    {% if log.related_id %}
+                    <span class="log-related">Job #{{ log.related_id }}</span>
+                    {% endif %}
+                </div>
+                <div class="log-message">{{ log.message }}</div>
+                {% if log.details %}
+                <div class="log-details">
+                    {% for key, value in log.details.items() %}
+                    <span class="log-detail-item">{{ key }}: {{ value }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="logs-empty">
+                <p>No job logs yet.</p>
+                <p class="logs-empty-hint">Import job activity like start, progress, and completion will appear here.</p>
+            </div>
+        {% endif %}
+    </div>
+    {% if total > limit %}
+    <div class="logs-pagination">
+        {% if offset > 0 %}
+        <button
+            class="btn btn-ghost btn-sm"
+            hx-get="/api/logs/jobs?offset={{ offset - limit }}&limit={{ limit }}"
+            hx-target="#logs-subtab-content"
+            hx-swap="innerHTML"
+        >
+            Newer
+        </button>
+        {% endif %}
+        {% if offset + limit < total %}
+        <button
+            class="btn btn-ghost btn-sm"
+            hx-get="/api/logs/jobs?offset={{ offset + limit }}&limit={{ limit }}"
+            hx-target="#logs-subtab-content"
+            hx-swap="innerHTML"
+        >
+            Older
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>

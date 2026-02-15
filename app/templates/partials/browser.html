@@ -4,7 +4,7 @@
     <div class="datastore-accordion">
         {% for ds in datastores %}
         <div class="datastore-section" x-data="{ loading: false }">
-            <button
+            <div
                 class="datastore-header"
                 :class="{ 'expanded': expandedDatastore === '{{ ds.datastore_id }}' }"
                 @click="expandedDatastore = expandedDatastore === '{{ ds.datastore_id }}' ? null : '{{ ds.datastore_id }}'"
@@ -20,11 +20,26 @@
                         {% endif %}
                     </span>
                 </div>
-                <span class="datastore-toggle">
-                    <svg x-show="expandedDatastore !== '{{ ds.datastore_id }}'" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    <svg x-show="expandedDatastore === '{{ ds.datastore_id }}'" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
-                </span>
-            </button>
+                <div class="datastore-header-actions">
+                    <button
+                        class="btn btn-outline-neon btn-sm"
+                        hx-post="/api/import/folder"
+                        hx-vals='{"prefix": "", "datastore_id": "{{ ds.datastore_id }}"}'
+                        hx-target="#toast-container"
+                        hx-swap="innerHTML"
+                        hx-confirm="Import entire bucket '{{ ds.bucket_name }}' recursively? This will queue all objects for import."
+                        @htmx:after-request.camel="if($event.detail.successful) { activeTab = 'jobs'; htmx.ajax('GET', '/api/jobs', {target: '#tab-content', swap: 'innerHTML'}) }"
+                        @click.stop
+                    >
+                        <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        Import all
+                    </button>
+                    <span class="datastore-toggle">
+                        <svg x-show="expandedDatastore !== '{{ ds.datastore_id }}'" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        <svg x-show="expandedDatastore === '{{ ds.datastore_id }}'" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                    </span>
+                </div>
+            </div>
             <div
                 class="datastore-content"
                 x-show="expandedDatastore === '{{ ds.datastore_id }}'"

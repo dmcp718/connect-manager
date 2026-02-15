@@ -10,7 +10,7 @@ import json
 import os
 from typing import Any
 
-from arq import create_pool
+from arq import create_pool, cron
 from arq.connections import RedisSettings
 
 from services import database as db
@@ -18,6 +18,7 @@ from services.lucidlink import LucidLinkClient
 from services.s3_service import S3Service
 from services import secrets
 from services.sqs_poller import sqs_poll_cron
+from services.activity_logger import ActivityLogger
 
 # Initialize database on module load
 db.init_db()
@@ -54,10 +55,18 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
     db.update_job(job_id, status="running")
     await log(f"Job #{job_id} started: {job['prefix']}")
 
+    # Log job start to activity log
+    user_id = job.get("user_id")
+    ActivityLogger.job_started(user_id, job_id, job['prefix'], total_files=0)
+
     ll_client = None
     try:
-        # Get credentials
-        token = secrets.get_lucidlink_token()
+        # Get credentials - use user-specific token in multi-user mode
+        user_id = job.get("user_id")
+        if user_id:
+            token = secrets.get_user_token(user_id)
+        else:
+            token = secrets.get_lucidlink_token()
         if not token:
             raise ValueError("No API token available - please reconnect in web UI")
 
@@ -68,7 +77,7 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
 
         datastore_id = job.get("datastore_id")
         if datastore_id:
-            cred = db.get_datastore_credentials(datastore_id)
+            cred = db.get_datastore_credentials(datastore_id, user_id=user_id)
             if cred:
                 credentials_key = cred.get("credentials_key")
                 aws_key, aws_secret = secrets.get_named_credentials(credentials_key)
@@ -83,8 +92,9 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         if not job.get("filespace_id") or not job.get("datastore_id"):
             raise ValueError("Job missing filespace_id or datastore_id")
 
-        # Get saved API host
-        api_host = db.get_setting("api_host") or ""
+        # Get saved API host (user-specific in multi-user mode)
+        api_host_key = f"api_host_{user_id}" if user_id else "api_host"
+        api_host = db.get_setting(api_host_key) or ""
 
         await log(f"Using filespace: {job['filespace_id'][:8]}...")
 
@@ -211,15 +221,22 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         job = db.get_job(job_id)
         if job and job.get("status") == "cancelled":
             await log(f"Job #{job_id} cancelled ({completed}/{total} files)")
+            ActivityLogger.job_cancelled(user_id, job_id)
             return {"status": "cancelled", "completed": completed, "failed": failed}
 
         db.update_job(job_id, status="completed")
         await log(f"Job #{job_id} complete: {total_new} new, {total_skipped} skipped, {failed} failed")
+
+        # Log job completion to activity log
+        ActivityLogger.job_completed(user_id, job_id, completed, failed)
         return {"status": "completed", "completed": completed, "failed": failed, "new": total_new, "skipped": total_skipped}
 
     except Exception as e:
         await log(f"Job #{job_id} failed: {e}")
         db.update_job(job_id, status="failed", error_message=str(e))
+
+        # Log job failure to activity log
+        ActivityLogger.job_failed(user_id, job_id, str(e))
         return {"status": "failed", "message": str(e)}
     finally:
         # Always close the HTTP client to release connections
@@ -237,10 +254,48 @@ async def on_shutdown(ctx: dict) -> None:
     pass
 
 
+async def cleanup_old_events(ctx: dict[str, Any]) -> int:
+    """Periodic cleanup of old SQS events (runs every 6 hours)."""
+    deleted = db.clear_old_sqs_events(days=7)
+    if deleted > 0:
+        await publish_log(ctx, f"Cleanup: deleted {deleted} old SQS events")
+    return deleted
+
+
+async def timeout_stale_jobs(ctx: dict[str, Any]) -> int:
+    """Mark stale running jobs as failed (runs every 15 minutes).
+
+    Jobs running for more than 1 hour are considered stale - likely the worker
+    crashed or was terminated without updating the job status.
+    """
+    timed_out = db.timeout_stale_jobs(hours=1)
+    if timed_out > 0:
+        await publish_log(ctx, f"Timeout: marked {timed_out} stale job(s) as failed")
+    return timed_out
+
+
+async def cleanup_old_activity_logs(ctx: dict[str, Any]) -> dict:
+    """Periodic cleanup of old activity logs (runs daily at 3 AM).
+
+    Retention policy:
+    - Standard logs (app, job, sqs): 30 days
+    - Admin logs: 90 days
+    """
+    result = db.clear_old_activity_logs(standard_days=30, admin_days=90)
+    if result["total"] > 0:
+        await publish_log(ctx, f"Cleanup: deleted {result['total']} old activity logs")
+    return result
+
+
 class WorkerSettings:
     """ARQ worker settings."""
     functions = [import_job]
-    cron_jobs = [sqs_poll_cron]  # SQS polling every 30 seconds
+    cron_jobs = [
+        sqs_poll_cron,  # SQS polling every 10 seconds
+        cron(cleanup_old_events, hour={0, 6, 12, 18}, minute=0),  # Cleanup every 6 hours
+        cron(timeout_stale_jobs, minute={0, 15, 30, 45}),  # Timeout check every 15 minutes
+        cron(cleanup_old_activity_logs, hour=3, minute=0),  # Activity logs cleanup daily at 3 AM
+    ]
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings = get_redis_settings()

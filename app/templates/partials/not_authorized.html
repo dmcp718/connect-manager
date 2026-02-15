@@ -1,0 +1,33 @@
+<!-- Not Authorized Message -->
+<div class="panel">
+    <div class="panel-body">
+        <div class="not-authorized">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+            </svg>
+            <h3>Access denied</h3>
+            <p class="text-muted">{{ error or 'You do not have permission to access this page.' }}</p>
+        </div>
+    </div>
+</div>
+
+<style>
+    .not-authorized {
+        text-align: center;
+        padding: 3rem 1rem;
+    }
+
+    .not-authorized svg {
+        color: var(--color-error);
+        margin-bottom: 1rem;
+    }
+
+    .not-authorized h3 {
+        margin: 0 0 0.5rem 0;
+    }
+
+    .not-authorized p {
+        margin: 0;
+    }
+</style>

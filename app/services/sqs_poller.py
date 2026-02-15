@@ -16,6 +16,7 @@ from services import database as db
 from services import secrets
 from services.sqs_service import SQSService, SQSError
 from services.lucidlink import LucidLinkClient
+from services.activity_logger import ActivityLogger
 
 # Lock key for distributed polling
 POLL_LOCK_KEY = "sqs:poll:lock"
@@ -91,22 +92,7 @@ async def poll_sqs_queues(ctx: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "skipped", "reason": "another worker is polling"}
 
     try:
-        # Get SQS credentials
-        sqs_creds = db.get_sqs_credentials()
-        if not sqs_creds:
-            return {"status": "skipped", "reason": "no SQS credentials configured"}
-
-        # Decrypt secret key
-        access_key = sqs_creds.get("access_key")
-        secret_key_encrypted = sqs_creds.get("secret_key_encrypted")
-        secret_key = secrets.get_secret(f"sqs_secret_{secret_key_encrypted}")
-
-        if not access_key or not secret_key:
-            return {"status": "error", "reason": "invalid SQS credentials"}
-
-        region = sqs_creds.get("region", "us-east-1")
-
-        # Get active queues
+        # Get active queues (from all users - poller needs to process all)
         queues = db.list_active_sqs_queues()
         if not queues:
             return {"status": "ok", "queues_polled": 0, "events_processed": 0}
@@ -114,19 +100,37 @@ async def poll_sqs_queues(ctx: Dict[str, Any]) -> Dict[str, Any]:
         total_events = 0
         errors = []
 
-        # Group queues by region for efficient client reuse
-        sqs_clients = {}
+        # Group queues by (user_id, region) for efficient client reuse
+        # Each user has their own SQS credentials
+        sqs_clients = {}  # key: (user_id, region) -> SQSService
 
         for queue in queues:
             try:
-                # Use queue's region, fall back to default
-                queue_region = queue.get("region") or region
+                # Get user's SQS credentials for this queue
+                user_id = queue.get("user_id")
+                sqs_creds = db.get_sqs_credentials(user_id=user_id)
+                if not sqs_creds:
+                    db.update_sqs_queue(queue["id"], error_message="No SQS credentials configured for user")
+                    continue
 
-                # Get or create SQS client for this region
-                if queue_region not in sqs_clients:
-                    sqs_clients[queue_region] = SQSService(access_key, secret_key, queue_region)
+                # Decrypt secret key
+                access_key = sqs_creds.get("access_key")
+                secret_key_encrypted = sqs_creds.get("secret_key_encrypted")
+                secret_key = secrets.get_secret(f"sqs_secret_{secret_key_encrypted}")
 
-                sqs = sqs_clients[queue_region]
+                if not access_key or not secret_key:
+                    db.update_sqs_queue(queue["id"], error_message="Invalid SQS credentials")
+                    continue
+
+                # Use queue's region
+                queue_region = queue.get("region") or sqs_creds.get("region", "us-east-1")
+
+                # Get or create SQS client for this user+region combination
+                client_key = (user_id, queue_region)
+                if client_key not in sqs_clients:
+                    sqs_clients[client_key] = SQSService(access_key, secret_key, queue_region)
+
+                sqs = sqs_clients[client_key]
                 events_count = await poll_single_queue(ctx, sqs, queue)
                 total_events += events_count
 
@@ -224,6 +228,9 @@ async def process_s3_event(
     """
     Process a single S3 event - create import job.
 
+    Uses idempotent processing to prevent duplicate imports when SQS
+    redelivers messages (e.g., after visibility timeout or failed deletion).
+
     Args:
         ctx: ARQ context
         event: Parsed S3 event
@@ -234,12 +241,18 @@ async def process_s3_event(
     datastore_id = queue["datastore_id"]
     filespace_id = queue["filespace_id"]
     import_prefix = queue.get("import_prefix", "")
+    user_id = queue.get("user_id")
 
     bucket = event.get("bucket", "")
     object_key = event.get("key", "")
     object_size = event.get("size")
     event_type = event.get("event_type", "")
     event_time = event.get("event_time")
+
+    # Idempotency check: skip if we've already processed this exact event
+    # Uses idx_sqs_events_message_id index for fast lookup
+    if db.sqs_event_exists(message_id, queue_id, object_key):
+        return  # Already processed, skip silently
 
     # Generate unique event ID
     event_id = f"{uuid.uuid4().hex}"
@@ -256,8 +269,8 @@ async def process_s3_event(
         event_time=event_time,
     )
 
-    # Get DataStore credentials for S3 access
-    cred = db.get_datastore_credentials(datastore_id)
+    # Get DataStore credentials for S3 access (user-specific in multi-user mode)
+    cred = db.get_datastore_credentials(datastore_id, user_id=user_id)
     if not cred:
         db.update_sqs_event(
             event_id,
@@ -266,18 +279,19 @@ async def process_s3_event(
         )
         return
 
-    # Get LucidLink API token
-    token = secrets.get_lucidlink_token()
+    # Get LucidLink API token for the user who created this queue
+    token = secrets.get_user_token(user_id) if user_id else secrets.get_lucidlink_token()
     if not token:
         db.update_sqs_event(
             event_id,
             status="failed",
-            error_message="LucidLink API token not configured",
+            error_message="LucidLink API token not configured - please reconnect in Settings",
         )
         return
 
-    # Get API host
-    api_host = db.get_setting("api_host") or ""
+    # Get API host (user-specific in multi-user mode)
+    api_host_key = f"api_host_{user_id}" if user_id else "api_host"
+    api_host = db.get_setting(api_host_key) or ""
 
     # Update event status to processing
     db.update_sqs_event(event_id, status="processing")
@@ -304,12 +318,19 @@ async def process_s3_event(
         # Ensure folder structure exists
         structure_ok, structure_error = await ll_client.ensure_structure(ll_path)
 
+        # Get queue name for logging
+        queue_name = queue.get("name", queue_id[:8])
+
         if structure_ok:
             # Import the file
             code, error_msg = await ll_client.import_file(object_key, ll_path)
 
             if code in [200, 201]:
                 db.update_sqs_event(event_id, status="completed")
+                # Log successful SQS event processing
+                ActivityLogger.sqs_event_processed(
+                    user_id, queue_id, queue_name, object_key, "success"
+                )
             elif code in [400, 409] and "already exists" in error_msg.lower():
                 db.update_sqs_event(event_id, status="skipped", error_message="Already exists")
             else:
@@ -318,17 +339,33 @@ async def process_s3_event(
                     status="failed",
                     error_message=f"HTTP {code}: {error_msg[:150]}",
                 )
+                # Log failed SQS event
+                ActivityLogger.sqs_event_processed(
+                    user_id, queue_id, queue_name, object_key, "failed",
+                    error=f"HTTP {code}: {error_msg[:100]}"
+                )
         else:
             db.update_sqs_event(
                 event_id,
                 status="failed",
                 error_message=f"Failed to create folder: {structure_error[:150]}",
             )
+            # Log failed SQS event
+            ActivityLogger.sqs_event_processed(
+                user_id, queue_id, queue_name, object_key, "failed",
+                error=f"Folder creation failed: {structure_error[:100]}"
+            )
 
         await ll_client.close()
 
     except Exception as e:
         db.update_sqs_event(event_id, status="failed", error_message=str(e)[:200])
+        # Log failed SQS event
+        queue_name = queue.get("name", queue_id[:8])
+        ActivityLogger.sqs_event_processed(
+            user_id, queue_id, queue_name, object_key, "failed",
+            error=str(e)[:100]
+        )
 
 
 # Cron job configuration for ARQ

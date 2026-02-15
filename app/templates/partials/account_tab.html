@@ -1,0 +1,713 @@
+<!-- Account Tab -->
+<div class="account-tab">
+    <!-- Your Account Card -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-header-left">
+                <span class="card-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </span>
+                <h3 class="card-title">Your account</h3>
+            </div>
+        </div>
+
+        <div class="card-body">
+            <div class="account-info">
+                <div class="account-avatar">
+                    {{ current_user.email[0]|upper }}
+                </div>
+                <div class="account-details">
+                    <span class="account-email">{{ current_user.email }}</span>
+                    <span class="account-role">
+                        {% if current_user.is_admin %}
+                        <span class="badge badge-admin">Admin</span>
+                        {% else %}
+                        <span class="badge badge-user">User</span>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+
+            <div class="account-section">
+                <h4 class="section-title">Change password</h4>
+                <form
+                    class="password-form"
+                    hx-post="/api/auth/change-password"
+                    hx-swap="innerHTML"
+                    hx-target="#password-result"
+                    x-data="{ submitting: false, showCurrent: false, showNew: false, showConfirm: false }"
+                    @submit="submitting = true"
+                    @htmx:after-request="submitting = false"
+                >
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="current_password">Current password</label>
+                            <div class="input-password">
+                                <input
+                                    :type="showCurrent ? 'text' : 'password'"
+                                    id="current_password"
+                                    name="current_password"
+                                    required
+                                    autocomplete="current-password"
+                                    class="form-input"
+                                >
+                                <button type="button" class="eye-toggle" @click="showCurrent = !showCurrent" tabindex="-1">
+                                    <svg x-show="!showCurrent" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                    <svg x-show="showCurrent" x-cloak width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="new_password">New password</label>
+                            <div class="input-password">
+                                <input
+                                    :type="showNew ? 'text' : 'password'"
+                                    id="new_password"
+                                    name="new_password"
+                                    required
+                                    minlength="8"
+                                    autocomplete="new-password"
+                                    class="form-input"
+                                >
+                                <button type="button" class="eye-toggle" @click="showNew = !showNew" tabindex="-1">
+                                    <svg x-show="!showNew" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                    <svg x-show="showNew" x-cloak width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                            <small class="form-hint">Min 8 chars, uppercase, lowercase, number</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="confirm_password">Confirm password</label>
+                            <div class="input-password">
+                                <input
+                                    :type="showConfirm ? 'text' : 'password'"
+                                    id="confirm_password"
+                                    name="confirm_password"
+                                    required
+                                    minlength="8"
+                                    autocomplete="new-password"
+                                    class="form-input"
+                                >
+                                <button type="button" class="eye-toggle" @click="showConfirm = !showConfirm" tabindex="-1">
+                                    <svg x-show="!showConfirm" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                    <svg x-show="showConfirm" x-cloak width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-group form-group-btn">
+                            <button type="submit" class="btn btn-primary" :disabled="submitting">
+                                <span x-show="!submitting">Update</span>
+                                <span x-show="submitting" x-cloak>Updating...</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="password-result"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% if is_admin %}
+    <!-- User Management Card (Admin Only) -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-header-left">
+                <span class="card-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                </span>
+                <h3 class="card-title">User management</h3>
+                <span class="badge badge-count">{{ users|length }}</span>
+            </div>
+            <div class="card-header-actions">
+                <button
+                    class="btn btn-secondary btn-sm"
+                    hx-get="/api/tab/account"
+                    hx-target="#tab-content"
+                    hx-swap="innerHTML"
+                    title="Refresh user list"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                </button>
+                <button
+                    class="btn btn-neon"
+                    hx-get="/api/auth/invite-modal"
+                    hx-target="#modal-container"
+                    hx-swap="innerHTML"
+                    @click="openModal()"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Add user
+                </button>
+            </div>
+        </div>
+
+        {% if error %}
+        <div class="card-alert card-alert-error">{{ error }}</div>
+        {% endif %}
+
+        {% if success %}
+        <div class="card-alert card-alert-success">{{ success }}</div>
+        {% endif %}
+
+        <div class="card-body card-body-flush">
+            <table class="users-table">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Role</th>
+                        <th>Last login</th>
+                        <th>Created</th>
+                        <th class="th-actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td class="td-user">
+                            <div class="user-info">
+                                <div class="user-avatar">
+                                    {{ user.email[0]|upper }}
+                                </div>
+                                <div class="user-details">
+                                    <span class="user-email">{{ user.email }}</span>
+                                    {% if user.display_name and user.display_name != user.email.split('@')[0] %}
+                                    <span class="user-name">{{ user.display_name }}</span>
+                                    {% endif %}
+                                </div>
+                                {% if user.id == current_user.id %}
+                                <span class="badge badge-you">You</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            {% if user.is_admin %}
+                            <span class="badge badge-admin">Admin</span>
+                            {% else %}
+                            <span class="badge badge-user">User</span>
+                            {% endif %}
+                        </td>
+                        <td class="td-date">
+                            {% if user.last_login %}
+                            {{ user.last_login[:10] }}
+                            {% else %}
+                            <span class="text-muted">Never</span>
+                            {% endif %}
+                        </td>
+                        <td class="td-date">{{ user.created_at[:10] if user.created_at else '-' }}</td>
+                        <td class="td-actions">
+                            {% if user.id != current_user.id %}
+                            {% if user.is_admin %}
+                            <button
+                                class="btn-icon btn-icon-demote"
+                                hx-patch="/api/auth/users/{{ user.id }}/role"
+                                hx-vals='{"is_admin": "false"}'
+                                hx-target="#tab-content"
+                                hx-swap="innerHTML"
+                                hx-confirm="Remove admin privileges from {{ user.email }}?"
+                                title="Demote to user"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 19V5"></path>
+                                    <polyline points="5 12 12 19 19 12"></polyline>
+                                </svg>
+                            </button>
+                            {% else %}
+                            <button
+                                class="btn-icon btn-icon-promote"
+                                hx-patch="/api/auth/users/{{ user.id }}/role"
+                                hx-vals='{"is_admin": "true"}'
+                                hx-target="#tab-content"
+                                hx-swap="innerHTML"
+                                hx-confirm="Grant admin privileges to {{ user.email }}?"
+                                title="Promote to admin"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14"></path>
+                                    <polyline points="19 12 12 5 5 12"></polyline>
+                                </svg>
+                            </button>
+                            {% endif %}
+                            <button
+                                class="btn-icon btn-icon-danger"
+                                hx-delete="/api/auth/users/{{ user.id }}"
+                                hx-target="#tab-content"
+                                hx-swap="innerHTML"
+                                hx-confirm="Delete user {{ user.email }}? This cannot be undone."
+                                title="Delete user"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="td-empty">
+                            <p>No users found</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    // Validate password match before submit
+    document.querySelector('.password-form').addEventListener('submit', function(e) {
+        const newPwd = document.getElementById('new_password').value;
+        const confirmPwd = document.getElementById('confirm_password').value;
+        const resultDiv = document.getElementById('password-result');
+
+        if (newPwd !== confirmPwd) {
+            e.preventDefault();
+            resultDiv.innerHTML = '<div class="alert alert-error">Passwords do not match</div>';
+            return false;
+        }
+    });
+
+    // Handle successful password change
+    document.body.addEventListener('htmx:afterRequest', function(e) {
+        if (e.detail.target.id === 'password-result' && e.detail.successful) {
+            try {
+                const response = JSON.parse(e.detail.xhr.response);
+                if (response.status === 'success') {
+                    document.getElementById('password-result').innerHTML =
+                        '<div class="alert alert-success">Password changed. Redirecting to login...</div>';
+                    setTimeout(() => window.location.href = '/login', 2000);
+                }
+            } catch (err) {
+                // Response wasn't JSON, might be HTML error
+            }
+        }
+    });
+</script>
+
+<style>
+.account-tab {
+    max-width: 900px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+}
+
+/* Account Info */
+.account-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--color-gray-80);
+    margin-bottom: var(--space-lg);
+}
+
+.account-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--color-indigo);
+    color: var(--color-white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.account-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.account-email {
+    font-size: 1.125rem;
+    font-weight: 500;
+    color: var(--color-white);
+}
+
+.account-role {
+    display: flex;
+    align-items: center;
+}
+
+/* Section */
+.account-section {
+    margin-top: var(--space-sm);
+}
+
+.section-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-gray-40);
+    margin: 0 0 var(--space-md) 0;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+/* Password Form - Horizontal Layout */
+.password-form .form-row {
+    display: flex;
+    gap: var(--space-md);
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.password-form .form-group {
+    flex: 1;
+    min-width: 150px;
+}
+
+.password-form .form-group-btn {
+    flex: 0 0 auto;
+    min-width: auto;
+    padding-top: 24px;
+}
+
+.password-form label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-gray-40);
+    margin-bottom: 6px;
+}
+
+.password-form .form-input {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--color-gray-90);
+    border: 1px solid var(--color-gray-70);
+    border-radius: var(--radius-sm);
+    color: var(--color-white);
+    font-size: 0.875rem;
+}
+
+.password-form .form-input:focus {
+    outline: none;
+    border-color: var(--color-indigo);
+}
+
+.password-form .input-password {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-form .input-password .form-input {
+    padding-right: 40px;
+}
+
+.password-form .eye-toggle {
+    position: absolute;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--color-gray-50);
+    cursor: pointer;
+    transition: color 150ms ease;
+}
+
+.password-form .eye-toggle:hover {
+    color: var(--color-white);
+}
+
+.password-form .form-hint {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--color-gray-50);
+    margin-top: 4px;
+}
+
+#password-result {
+    width: 100%;
+    margin-top: var(--space-sm);
+}
+
+#password-result .alert {
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+}
+
+#password-result .alert-error {
+    background: rgba(248, 104, 90, 0.1);
+    color: var(--color-error);
+    border: 1px solid rgba(248, 104, 90, 0.2);
+}
+
+#password-result .alert-success {
+    background: rgba(176, 251, 21, 0.1);
+    color: var(--color-neon);
+    border: 1px solid rgba(176, 251, 21, 0.2);
+}
+
+/* Card styles */
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+}
+
+.card-header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.card-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.card-body-flush {
+    padding: 0;
+}
+
+.card-alert {
+    padding: var(--space-sm) var(--space-md);
+    font-size: 0.875rem;
+}
+
+.card-alert-error {
+    background: rgba(248, 104, 90, 0.1);
+    color: var(--color-error);
+    border-bottom: 1px solid rgba(248, 104, 90, 0.2);
+}
+
+.card-alert-success {
+    background: rgba(176, 251, 21, 0.1);
+    color: var(--color-neon);
+    border-bottom: 1px solid rgba(176, 251, 21, 0.2);
+}
+
+/* Badge count */
+.badge-count {
+    background: var(--color-gray-80);
+    color: var(--color-gray-40);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* Table Styles */
+.users-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.users-table th {
+    text-align: left;
+    padding: var(--space-sm) var(--space-md);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-gray-50);
+    background: var(--color-gray-90);
+    border-bottom: 1px solid var(--color-gray-80);
+}
+
+.users-table td {
+    padding: var(--space-md);
+    border-bottom: 1px solid var(--color-gray-80);
+    vertical-align: middle;
+}
+
+.users-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.users-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.th-actions {
+    width: 80px;
+}
+
+/* User Cell */
+.td-user {
+    min-width: 250px;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.user-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--color-indigo);
+    color: var(--color-white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.875rem;
+    flex-shrink: 0;
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.user-email {
+    font-weight: 500;
+    color: var(--color-white);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-name {
+    font-size: 0.8125rem;
+    color: var(--color-gray-50);
+}
+
+/* Badges */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: var(--radius-full);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.badge-admin {
+    background: rgba(94, 83, 224, 0.15);
+    color: #8b7ff0;
+}
+
+.badge-user {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--color-gray-40);
+}
+
+.badge-you {
+    background: rgba(176, 251, 21, 0.15);
+    color: var(--color-neon);
+    margin-left: var(--space-sm);
+}
+
+/* Date columns */
+.td-date {
+    font-size: 0.875rem;
+    color: var(--color-gray-40);
+    white-space: nowrap;
+}
+
+/* Actions */
+.td-actions {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.td-actions .btn-icon {
+    margin-left: 4px;
+}
+
+.td-actions .btn-icon:first-child {
+    margin-left: 0;
+}
+
+.btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--color-gray-50);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-icon:hover {
+    background: var(--color-gray-80);
+    color: var(--color-white);
+}
+
+.btn-icon-danger:hover {
+    background: rgba(248, 104, 90, 0.15);
+    color: var(--color-error);
+}
+
+.btn-icon-promote:hover {
+    background: rgba(94, 83, 224, 0.15);
+    color: #8b7ff0;
+}
+
+.btn-icon-demote:hover {
+    background: rgba(255, 193, 7, 0.15);
+    color: #ffc107;
+}
+
+/* Empty state */
+.td-empty {
+    padding: var(--space-xl) !important;
+    text-align: center;
+    color: var(--color-gray-50);
+}
+
+.td-empty p {
+    margin: 0;
+}
+</style>

@@ -11,7 +11,7 @@ show_help() {
     echo ""
     echo "Usage: ./run.sh [command]"
     echo ""
-    echo "Commands:"
+    echo "Development Commands:"
     echo "  start       Start the application (default)"
     echo "  stop        Stop the application"
     echo "  restart     Restart the application"
@@ -19,12 +19,28 @@ show_help() {
     echo "  status      Show container status"
     echo "  build       Rebuild and start"
     echo "  clean       Stop and remove all containers/volumes"
+    echo ""
+    echo "Production Commands (with built-in Caddy):"
+    echo "  prod        Start with Caddy reverse proxy (HTTPS)"
+    echo "  prod-build  Rebuild and start production"
+    echo "  prod-stop   Stop production deployment"
+    echo "  prod-logs   Show production logs"
+    echo ""
+    echo "Production Commands (with shared/external Caddy):"
+    echo "  prod-shared       Start without Caddy (use external reverse proxy)"
+    echo "  prod-shared-build Rebuild and start (external proxy mode)"
+    echo "  prod-shared-stop  Stop external proxy deployment"
+    echo "  prod-shared-logs  Show logs (external proxy mode)"
+    echo ""
     echo "  help        Show this help message"
     echo ""
     echo "Examples:"
-    echo "  ./run.sh              # Start the app"
+    echo "  ./run.sh              # Start dev mode (HTTP :8000)"
+    echo "  ./run.sh prod         # Start prod mode (HTTPS :443)"
     echo "  ./run.sh logs         # View logs"
-    echo "  ./run.sh restart      # Restart after changes"
+    echo ""
+    echo "Production requires .env file with DOMAIN and JWT_SECRET_KEY"
+    echo "See .env.example for details"
 }
 
 check_docker() {
@@ -37,6 +53,34 @@ check_docker() {
     if ! docker info &> /dev/null; then
         echo "Error: Docker is not running"
         echo "Please start Docker Desktop and try again"
+        exit 1
+    fi
+}
+
+check_prod_env() {
+    # Load .env file if it exists
+    if [ -f .env ]; then
+        export $(grep -v '^#' .env | xargs)
+    fi
+
+    local missing=""
+
+    if [ -z "$DOMAIN" ]; then
+        missing="$missing DOMAIN"
+    fi
+
+    if [ -z "$JWT_SECRET_KEY" ]; then
+        missing="$missing JWT_SECRET_KEY"
+    fi
+
+    if [ -n "$missing" ]; then
+        echo "Error: Missing required environment variables for production:$missing"
+        echo ""
+        echo "Create a .env file with:"
+        echo "  DOMAIN=your-domain.com"
+        echo "  JWT_SECRET_KEY=\$(openssl rand -hex 32)"
+        echo ""
+        echo "See .env.example for details"
         exit 1
     fi
 }
@@ -83,6 +127,60 @@ case "${1:-start}" in
         echo "Stopping and removing all containers and volumes..."
         docker compose down -v
         echo "Cleaned."
+        ;;
+    prod)
+        check_docker
+        check_prod_env
+        echo "Starting CONNECT Manager in production mode..."
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+        echo ""
+        echo "Application started at: https://${DOMAIN}"
+        ;;
+    prod-build)
+        check_docker
+        check_prod_env
+        echo "Rebuilding and starting CONNECT Manager in production mode..."
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+        echo ""
+        echo "Application started at: https://${DOMAIN}"
+        ;;
+    prod-stop)
+        check_docker
+        echo "Stopping production CONNECT Manager..."
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+        echo "Stopped."
+        ;;
+    prod-logs)
+        check_docker
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f
+        ;;
+    prod-shared)
+        check_docker
+        check_prod_env
+        echo "Starting CONNECT Manager (external reverse proxy mode)..."
+        docker compose -f docker-compose.yml -f docker-compose.prod-shared.yml up -d
+        echo ""
+        echo "Application started on localhost:8000"
+        echo "Configure your external reverse proxy to forward to this port."
+        ;;
+    prod-shared-build)
+        check_docker
+        check_prod_env
+        echo "Rebuilding and starting CONNECT Manager (external reverse proxy mode)..."
+        docker compose -f docker-compose.yml -f docker-compose.prod-shared.yml up --build -d
+        echo ""
+        echo "Application started on localhost:8000"
+        echo "Configure your external reverse proxy to forward to this port."
+        ;;
+    prod-shared-stop)
+        check_docker
+        echo "Stopping CONNECT Manager (external proxy mode)..."
+        docker compose -f docker-compose.yml -f docker-compose.prod-shared.yml down
+        echo "Stopped."
+        ;;
+    prod-shared-logs)
+        check_docker
+        docker compose -f docker-compose.yml -f docker-compose.prod-shared.yml logs -f
         ;;
     help|--help|-h)
         show_help

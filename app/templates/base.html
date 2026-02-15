@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LucidLink Labs: CONNECT Manager</title>
+    <title>LucidLink Labs | LucidLink Connect Manager</title>
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -35,6 +35,12 @@
     <!-- HTMX -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/sse.js"></script>
+    <script>
+        // Ensure HTMX sends credentials (cookies) with all requests
+        document.addEventListener('htmx:configRequest', function(evt) {
+            evt.detail.withCredentials = true;
+        });
+    </script>
 
     <!-- Alpine.js for minor interactivity -->
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -49,7 +55,32 @@
     <header class="header">
         <div class="header-left">
             <img src="/static/img/lab_flask.svg" alt="Lab Flask" class="header-icon">
-            <h1 class="header-title">LucidLink Labs: CONNECT Manager</h1>
+            <h1 class="header-title">LucidLink Labs | LucidLink Connect Manager</h1>
+        </div>
+        <div class="header-right" x-data="{ userMenuOpen: false }">
+            {% if user_email %}
+            <div class="user-menu">
+                <button class="user-menu-btn" @click="userMenuOpen = !userMenuOpen" @click.away="userMenuOpen = false">
+                    <span class="user-email">{{ user_email }}</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6,9 12,15 18,9"></polyline>
+                    </svg>
+                </button>
+                <div class="user-dropdown" x-show="userMenuOpen" x-cloak>
+                    <button class="dropdown-item" @click="
+                        fetch('/api/auth/logout', { method: 'POST' })
+                        .then(() => window.location.href = '/login')
+                    ">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                            <polyline points="16 17 21 12 16 7"></polyline>
+                            <line x1="21" y1="12" x2="9" y2="12"></line>
+                        </svg>
+                        Sign out
+                    </button>
+                </div>
+            </div>
+            {% endif %}
         </div>
     </header>
 
@@ -118,6 +149,16 @@
                     hx-swap="innerHTML"
                 >
                     Help
+                </button>
+                <button
+                    class="tab"
+                    :class="{ 'active': activeTab === 'account' }"
+                    @click="activeTab = 'account'"
+                    hx-get="/api/tab/account"
+                    hx-target="#tab-content"
+                    hx-swap="innerHTML"
+                >
+                    Account
                 </button>
             </div>
 
@@ -196,15 +237,15 @@
             }
         };
 
-        // When Logs tab loads, sync the count and flush pending
+        // When Logs tab loads, sync the count and discard pending
         document.body.addEventListener('htmx:afterSwap', function(event) {
             const logsContent = document.getElementById('logs-content');
             if (logsContent) {
                 // Sync: server just rendered N logs, update our counter
                 window.serverLogCount = logsContent.children.length;
                 sseLogIndex = window.serverLogCount;
-                // Flush any logs that arrived while tab was hidden
-                flushPendingLogs();
+                // Discard pending logs - server already rendered them
+                window.pendingLogs = [];
             }
         });
     </script>

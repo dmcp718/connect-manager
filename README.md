@@ -2,6 +2,14 @@
 
 A web application for importing S3 objects into LucidLink filespaces using the External Data Store API.
 
+## Branches
+
+| Branch | Description |
+|--------|-------------|
+| `main` | Single-user mode, no authentication required |
+| `multi-user` | Multi-user with JWT authentication, admin/user roles, production-ready |
+| `aws-deploy` | AWS deployment with Terraform, ALB, EFS, and local LucidLink API container |
+
 ## Features
 
 - **DataStore Management** - Create, view, and delete S3 DataStores in LucidLink
@@ -10,6 +18,15 @@ A web application for importing S3 objects into LucidLink filespaces using the E
 - **AWS SQS Event Stream** - Automatic imports triggered by S3 event notifications
 - **Job Queue** - Track import progress with real-time updates
 - **Activity Logs** - Real-time SSE-based logging
+
+### Multi-User Branch Additional Features
+- **User Authentication** - JWT-based login with secure httponly cookies
+- **Role-Based Access** - Admin and standard user roles
+- **User Management** - Admins can add/remove users
+- **Per-User Data Isolation** - Each user's DataStore credentials are private
+- **Encrypted Secrets** - AWS credentials encrypted at rest (Fernet AES-128)
+- **Production Deployment** - Caddy reverse proxy with automatic HTTPS
+- **AWS Deployment** - Terraform + deploy.sh with ALB, ASG auto-recovery, EFS persistence
 
 ## Quick Start
 
@@ -39,6 +56,24 @@ Open http://localhost:8000 in your browser.
 | `build` | Rebuild and start |
 | `clean` | Stop and remove all containers/volumes |
 | `help` | Show usage information |
+
+**Production Commands (multi-user branch):**
+
+| Command | Description |
+|---------|-------------|
+| `prod` | Start with Caddy reverse proxy (HTTPS) |
+| `prod-build` | Rebuild and start production |
+| `prod-stop` | Stop production deployment |
+| `prod-logs` | Show production logs |
+
+**Production with External Reverse Proxy:**
+
+| Command | Description |
+|---------|-------------|
+| `prod-shared` | Start without Caddy (use external proxy) |
+| `prod-shared-build` | Rebuild and start (external proxy mode) |
+| `prod-shared-stop` | Stop external proxy deployment |
+| `prod-shared-logs` | Show logs (external proxy mode) |
 
 Example: `./run.sh logs` or `run.bat restart`
 
@@ -103,39 +138,7 @@ New files uploaded to the S3 bucket will be automatically imported to LucidLink.
 **Required IAM Permissions:**
 - `sqs:CreateQueue`, `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`
 - `sqs:ReceiveMessage`, `sqs:DeleteMessage`
-- `s3:GetBucketNotificationConfiguration`, `s3:PutBucketNotificationConfiguration`
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Docker Compose                            │
-├─────────────┬─────────────┬─────────────┬───────────────────┤
-│   Web App   │  Worker 1   │  Worker 2   │      Valkey       │
-│  (FastAPI)  │ (ARQ+SQS)   │ (ARQ+SQS)   │  (Job Queue)      │
-│   :8000     │             │             │     :6379         │
-└──────┬──────┴──────┬──────┴──────┬──────┴─────────┬─────────┘
-       │             │             │                │
-       │        SQS Polling        │                │
-       │        (10s interval)     │                │
-       ▼             ▼             ▼                │
-┌─────────────────────────────────────────────┐    │
-│           LucidLink REST API                │    │
-│    (External Data Store Management)         │    │
-└─────────────────────────────────────────────┘    │
-       │                                           │
-       ▼                                           │
-┌─────────────────────────────────────────────┐    │
-│              AWS SQS Queue                  │    │
-│       (S3 Event Notifications)              │    │
-└──────────────────┬──────────────────────────┘    │
-                   │                               │
-                   ▼                               │
-┌─────────────────────────────────────────────┐    │
-│              S3 Buckets                     │◄───┘
-│         (via boto3/httpx)                   │
-└─────────────────────────────────────────────┘
-```
+- `s3:GetBucketNotification`, `s3:PutBucketNotification`
 
 ## Project Structure
 
@@ -160,7 +163,19 @@ lucidlink-connect-web-ui/
 │       ├── fonts/              # Aeonik font files
 │       └── img/icons/          # SVG icons
 ├── docker-compose.yml
+├── docker-compose.aws.yml       # AWS overlay (EFS + lucidlink-api)
 ├── Dockerfile
+├── deploy.sh                    # AWS deployment CLI
+├── terraform/
+│   ├── main.tf                  # Provider, data sources
+│   ├── vpc.tf                   # VPC, subnets, security groups
+│   ├── alb.tf                   # ALB, ACM cert, listeners
+│   ├── compute.tf               # IAM, launch template, ASG
+│   ├── storage.tf               # EFS, S3 deploy bucket
+│   ├── dns.tf                   # Route 53 record
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── scripts/user-data.sh     # EC2 bootstrap
 └── README.md
 ```
 
@@ -187,6 +202,86 @@ Swagger UI is available at your API endpoint + `/docs`:
 | `DATA_DIR` | `/data` | Persistent data directory |
 | `ARQ_MAX_JOBS` | `4` | Max concurrent jobs per worker |
 
-## License
+**Production Variables (multi-user branch):**
 
-Proprietary - LucidLink Corporation
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DOMAIN` | Yes | Your domain name (e.g., `connect.example.com`) |
+| `JWT_SECRET_KEY` | Yes | 64-char hex string: `openssl rand -hex 32` |
+| `ADMIN_EMAIL` | No | Initial admin email (default: `admin@localhost`) |
+| `ADMIN_PASSWORD` | No | Initial admin password (default: `admin`) |
+| `CF_API_TOKEN` | No | Cloudflare API token for DNS-01 ACME challenges |
+
+## Security
+
+### Credential Storage
+
+All sensitive credentials (AWS access keys, API tokens) are encrypted at rest:
+
+- **Algorithm**: Fernet (AES-128-CBC + HMAC-SHA256)
+- **Key Derivation**: PBKDF2 with 100,000 iterations from `JWT_SECRET_KEY`
+- **Storage**: `$DATA_DIR/secrets.enc` with 0600 permissions
+
+In local development mode (without `DATA_DIR`), credentials use the system keyring (macOS Keychain, Windows Credential Locker, or Linux Secret Service).
+
+### Authentication
+
+- JWT tokens stored in httponly cookies (not accessible to JavaScript)
+- Passwords hashed with bcrypt
+- Per-user data isolation (users cannot see each other's credentials)
+
+## Production Deployment (multi-user branch)
+
+1. **Configure DNS** - Point your domain to the server
+
+2. **Create `.env` file:**
+```bash
+cp .env.example .env
+```
+
+3. **Edit `.env` with your settings:**
+```bash
+DOMAIN=connect.example.com
+JWT_SECRET_KEY=your-64-char-hex-secret
+ADMIN_EMAIL=admin@yourcompany.com
+ADMIN_PASSWORD=secure-password-here
+```
+
+4. **Start production:**
+```bash
+./run.sh prod
+```
+
+Caddy automatically provisions Let's Encrypt certificates on first request.
+
+## AWS Deployment (aws-deploy branch)
+
+Deploys to a single EC2 instance behind an ALB with auto-recovery, EFS for persistent data, and a local `lucidlink/lucidlink-api` container. Estimated cost: ~$37/month.
+
+**Prerequisites:** AWS CLI, Terraform, a Route 53 hosted zone for your domain.
+
+```bash
+./deploy.sh setup      # Configure secrets + Terraform variables (interactive)
+./deploy.sh plan       # Preview infrastructure changes
+./deploy.sh deploy     # Deploy infrastructure + upload application
+```
+
+**Architecture:**
+- **ALB** - HTTPS termination (ACM cert, TLS 1.3), HTTP→HTTPS redirect, 5-min idle timeout for SSE
+- **ASG (1/1/1)** - Auto-replaces failed instances, ELB health checks
+- **EFS** - Persistent storage for SQLite DB, encrypted secrets, Valkey data, LucidLink API data
+- **S3** - Application artifact storage for bootstrap and updates
+- **SSM** - Secrets (SecureString) and instance access (no SSH keys required)
+- **LucidLink API** - `lucidlink/lucidlink-api` container in Docker network (`http://lucidlink-api:3003/api/v1`)
+
+**Management:**
+
+| Command | Description |
+|---------|-------------|
+| `./deploy.sh status` | Show instance health and ALB target status |
+| `./deploy.sh ssh` | Connect to instance via SSM (no SSH keys) |
+| `./deploy.sh logs` | View application logs (`app` or `boot`) |
+| `./deploy.sh update` | Push code changes to running instance |
+| `./deploy.sh secrets` | List or rotate SSM secrets |
+| `./deploy.sh destroy` | Tear down all infrastructure |
+
