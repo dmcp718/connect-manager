@@ -6,13 +6,13 @@
         </div>
         <div class="card-body">
             <div class="form-group">
-                <label class="form-label" for="api_host">API Endpoint{% if saved_api_host %} <span class="text-success">(saved)</span>{% endif %}</label>
+                <label class="form-label" for="api_host">API Endpoint{% if saved_api_host %} <span class="text-success">(saved)</span>{% elif default_api_host %} <span class="text-muted">(default)</span>{% endif %}</label>
                 <input
                     type="text"
                     id="api_host"
                     name="api_host"
                     class="form-input"
-                    value="{{ saved_api_host or '' }}"
+                    value="{{ saved_api_host or default_api_host or '' }}"
                     placeholder="https://api.lucidlink.com/api/v1"
                 >
             </div>

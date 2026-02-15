@@ -1,0 +1,34 @@
+# AWS deployment overlay - local LucidLink API + EFS-backed volumes
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod-shared.yml -f docker-compose.aws.yml up -d
+
+services:
+  lucidlink-api:
+    image: lucidlink/lucidlink-api
+    restart: unless-stopped
+    volumes:
+      - /data/lucidlink:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/api/v1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  web:
+    environment:
+      LL_API_HOST: "http://lucidlink-api:3003/api/v1"
+    volumes: !override
+      - /data/app:/data
+    depends_on:
+      lucidlink-api:
+        condition: service_healthy
+
+  worker:
+    environment:
+      LL_API_HOST: "http://lucidlink-api:3003/api/v1"
+    volumes: !override
+      - /data/app:/data
+
+  valkey:
+    volumes: !override
+      - /data/valkey:/data

@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from services.lucidlink import LucidLinkClient
+from services.lucidlink import LucidLinkClient, LL_HOST
 from services.s3_service import S3Service
 from services.user_state import UserSession, user_state_manager, get_user_session
 from services.job_queue import job_queue
@@ -133,6 +133,7 @@ async def index(request: Request):
         "selected_datastore": state.selected_datastore,
         "saved_token": state.token,
         "saved_api_host": state.api_host,
+        "default_api_host": LL_HOST,
         "browsable_datastores": browsable_datastores,
         "user_email": user_email,
         "is_admin": is_admin,
@@ -1016,6 +1017,7 @@ async def tab_settings(request: Request):
         "selected_datastore": state.selected_datastore,
         "saved_token": state.token,
         "saved_api_host": state.api_host,
+        "default_api_host": LL_HOST,
         "browsable_datastores": browsable_datastores,
     })
 
