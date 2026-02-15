@@ -5,13 +5,14 @@ Web app for importing S3 objects into LucidLink filespaces via External Data Sto
 ## Branches
 - **main**: Single-user mode, no authentication
 - **multi-user**: Multi-user with JWT auth, admin/user roles, Caddy HTTPS
+- **aws-deploy**: AWS deployment (Terraform + deploy.sh) with local LucidLink API container
 
 ## Stack
 - **Backend**: FastAPI + Python 3.12, ARQ workers, Valkey (Redis-compatible)
 - **Frontend**: HTMX + Alpine.js, custom CSS (LucidLink brand)
 - **Auth** (multi-user): JWT tokens, bcrypt passwords, per-user data isolation
 - **Secrets**: Fernet encryption (AES-128) at rest, key derived from JWT_SECRET_KEY
-- **Services**: web (:8000), worker x2, valkey (:6379), caddy (:443 prod)
+- **Services**: web (:8000), worker x2, valkey (:6379), lucidlink-api (:3003), caddy (:443 prod)
 
 ## Key Files
 **Backend**: `app/main.py` (routes), `app/services/lucidlink.py` (API client), `app/services/s3_service.py` (boto3), `app/services/worker.py` (ARQ + SQS polling), `app/services/database.py` (SQLite)
@@ -19,6 +20,8 @@ Web app for importing S3 objects into LucidLink filespaces via External Data Sto
 **Auth** (multi-user): `app/services/auth.py`, `app/services/user_state.py`, `app/routes/auth.py`, `app/middleware/auth.py`
 
 **Frontend**: `app/templates/base.html` (layout), `app/templates/partials/*.html` (tabs/modals), `app/static/css/style.css`
+
+**AWS Deployment**: `deploy.sh` (CLI wrapper), `docker-compose.aws.yml` (EFS volumes + lucidlink-api), `terraform/` (infrastructure)
 
 ## Development
 ```bash
@@ -46,6 +49,26 @@ ADMIN_PASSWORD=secure-password
 # ./run.sh prod
 # ./run.sh prod-build
 ```
+
+## AWS Deployment (aws-deploy branch)
+EC2 + ASG (1/1/1) with ALB, EFS, and local `lucidlink/lucidlink-api` container. ~$37/month.
+
+```bash
+./deploy.sh setup      # Interactive config → SSM secrets + terraform.tfvars
+./deploy.sh plan       # Preview infrastructure
+./deploy.sh deploy     # Deploy infrastructure + upload app
+./deploy.sh status     # Instance health + ALB target status
+./deploy.sh ssh        # SSM session (no SSH keys)
+./deploy.sh logs       # App logs | ./deploy.sh logs boot
+./deploy.sh update     # Push code changes to running instance
+./deploy.sh secrets    # List/rotate SSM secrets
+./deploy.sh destroy    # Full teardown
+```
+
+**Architecture**: ALB (HTTPS/TLS 1.3) → EC2 t3.small (Docker Compose) → EFS (/data)
+**Services**: web, worker x4, valkey, lucidlink-api (Docker network: `http://lucidlink-api:3003/api/v1`)
+**Secrets**: SSM Parameter Store (JWT, admin creds, domain). No SSH keys — SSM only.
+**Compose overlay**: `docker-compose.aws.yml` adds lucidlink-api + EFS bind mounts
 
 ## API Endpoints
 ```

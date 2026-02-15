@@ -8,6 +8,7 @@ A web application for importing S3 objects into LucidLink filespaces using the E
 |--------|-------------|
 | `main` | Single-user mode, no authentication required |
 | `multi-user` | Multi-user with JWT authentication, admin/user roles, production-ready |
+| `aws-deploy` | AWS deployment with Terraform, ALB, EFS, and local LucidLink API container |
 
 ## Features
 
@@ -25,6 +26,7 @@ A web application for importing S3 objects into LucidLink filespaces using the E
 - **Per-User Data Isolation** - Each user's DataStore credentials are private
 - **Encrypted Secrets** - AWS credentials encrypted at rest (Fernet AES-128)
 - **Production Deployment** - Caddy reverse proxy with automatic HTTPS
+- **AWS Deployment** - Terraform + deploy.sh with ALB, ASG auto-recovery, EFS persistence
 
 ## Quick Start
 
@@ -161,7 +163,19 @@ lucidlink-connect-web-ui/
 │       ├── fonts/              # Aeonik font files
 │       └── img/icons/          # SVG icons
 ├── docker-compose.yml
+├── docker-compose.aws.yml       # AWS overlay (EFS + lucidlink-api)
 ├── Dockerfile
+├── deploy.sh                    # AWS deployment CLI
+├── terraform/
+│   ├── main.tf                  # Provider, data sources
+│   ├── vpc.tf                   # VPC, subnets, security groups
+│   ├── alb.tf                   # ALB, ACM cert, listeners
+│   ├── compute.tf               # IAM, launch template, ASG
+│   ├── storage.tf               # EFS, S3 deploy bucket
+│   ├── dns.tf                   # Route 53 record
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── scripts/user-data.sh     # EC2 bootstrap
 └── README.md
 ```
 
@@ -239,4 +253,35 @@ ADMIN_PASSWORD=secure-password-here
 ```
 
 Caddy automatically provisions Let's Encrypt certificates on first request.
+
+## AWS Deployment (aws-deploy branch)
+
+Deploys to a single EC2 instance behind an ALB with auto-recovery, EFS for persistent data, and a local `lucidlink/lucidlink-api` container. Estimated cost: ~$37/month.
+
+**Prerequisites:** AWS CLI, Terraform, a Route 53 hosted zone for your domain.
+
+```bash
+./deploy.sh setup      # Configure secrets + Terraform variables (interactive)
+./deploy.sh plan       # Preview infrastructure changes
+./deploy.sh deploy     # Deploy infrastructure + upload application
+```
+
+**Architecture:**
+- **ALB** - HTTPS termination (ACM cert, TLS 1.3), HTTP→HTTPS redirect, 5-min idle timeout for SSE
+- **ASG (1/1/1)** - Auto-replaces failed instances, ELB health checks
+- **EFS** - Persistent storage for SQLite DB, encrypted secrets, Valkey data, LucidLink API data
+- **S3** - Application artifact storage for bootstrap and updates
+- **SSM** - Secrets (SecureString) and instance access (no SSH keys required)
+- **LucidLink API** - `lucidlink/lucidlink-api` container in Docker network (`http://lucidlink-api:3003/api/v1`)
+
+**Management:**
+
+| Command | Description |
+|---------|-------------|
+| `./deploy.sh status` | Show instance health and ALB target status |
+| `./deploy.sh ssh` | Connect to instance via SSM (no SSH keys) |
+| `./deploy.sh logs` | View application logs (`app` or `boot`) |
+| `./deploy.sh update` | Push code changes to running instance |
+| `./deploy.sh secrets` | List or rotate SSM secrets |
+| `./deploy.sh destroy` | Tear down all infrastructure |
 
