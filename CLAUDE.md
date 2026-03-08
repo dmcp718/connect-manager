@@ -3,7 +3,7 @@
 Web app for importing S3 objects into LucidLink filespaces via External Data Store API.
 
 ## Branches
-- **main**: Single-user mode, no authentication
+- **main**: Multi-user with JWT auth, admin/user roles
 - **multi-user**: Multi-user with JWT auth, admin/user roles, Caddy HTTPS
 - **aws-deploy**: AWS deployment (Terraform + deploy.sh) with local LucidLink API container
 
@@ -76,7 +76,7 @@ POST /api/load-filespaces              # Load filespaces + DataStores
 POST /api/create-datastore             # Create S3 DataStore
 GET|DELETE /api/datastores/{id}/info   # DataStore info/delete
 POST|DELETE /api/datastores/{id}/credentials  # S3 browsing creds
-GET /api/browse/{datastore_id}         # Browse S3 bucket
+GET /api/browse/{datastore_id}         # Browse S3 bucket (paginated: page, page_size)
 POST /api/import/file|folder           # Import to LucidLink
 GET /api/jobs, POST /api/jobs/{id}/cancel, DELETE /api/jobs/{id}
 POST|DELETE /api/sqs/credentials       # SQS IAM creds
@@ -106,6 +106,14 @@ DELETE /api/auth/users/{id}            # Delete user (admin)
 - Purple logo: `app/static/img/lab_flask_purp.svg`
 - Hardcoded `rgba(176,251,21,...)` values need explicit purple overrides (not covered by CSS variable remapping)
 - No backend involvement — purely client-side
+
+## S3 Browser Pagination
+- Per-card pagination scoped via `#datastore-browser-{{ datastore_id }}` HTMX targets
+- Default 50 items/page, selectable 25/50/100
+- `S3Service.list_objects` returns `S3ListResult` with continuation token loop (up to 5000 items)
+- Items sorted: folders first (alpha), then files (alpha)
+- Folder navigation and back reset to page 1; refresh preserves current page
+- Default API endpoint: `https://admin-api.solutions-eng.online/api/v1`
 
 ## AWS IAM Actions
 S3 bucket notification actions (do NOT add "Configuration" suffix):
