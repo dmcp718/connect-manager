@@ -38,6 +38,14 @@
     <!-- Alpine.js -->
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
+    <!-- Apply saved theme before paint -->
+    <script>
+        (function() {
+            var t = localStorage.getItem('theme');
+            if (t === 'purple') document.documentElement.setAttribute('data-theme', 'purple');
+        })();
+    </script>
+
     <style>
         .login-page {
             min-height: 100vh;
@@ -141,6 +149,10 @@
             transition: opacity 0.2s, transform 0.1s;
         }
 
+        [data-theme="purple"] .login-btn {
+            color: var(--color-white);
+        }
+
         .login-btn:hover {
             opacity: 0.9;
         }
@@ -204,10 +216,11 @@
     </style>
 </head>
 <body>
-    <div class="login-page" x-data="{ loading: false, error: '' }">
+    <div class="login-page" x-data="{ loading: false, error: '', theme: localStorage.getItem('theme') || 'neon' }">
         <div class="login-container">
             <div class="login-header">
-                <img src="/static/img/lab_flask.svg" alt="Lab Flask">
+                <img x-show="theme !== 'purple'" src="/static/img/lab_flask.svg" alt="Lab Flask">
+                <img x-show="theme === 'purple'" src="/static/img/lab_flask_purp.svg" alt="Lab Flask" x-cloak>
                 <h1>LucidLink Connect Manager</h1>
                 <p>Sign in to continue</p>
             </div>

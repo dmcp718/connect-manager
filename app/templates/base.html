@@ -44,22 +44,54 @@
 
     <!-- Alpine.js for minor interactivity -->
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- Apply saved theme before paint to prevent flash -->
+    <script>
+        (function() {
+            var t = localStorage.getItem('theme');
+            if (t === 'purple') document.documentElement.setAttribute('data-theme', 'purple');
+        })();
+    </script>
 </head>
 <body x-data="{
     activeTab: 'settings',
     modal: { open: false, loading: false },
+    theme: localStorage.getItem('theme') || 'neon',
     openModal() { this.modal.open = true; },
-    closeModal() { this.modal.open = false; this.modal.loading = false; }
+    closeModal() { this.modal.open = false; this.modal.loading = false; },
+    toggleTheme() {
+        this.theme = this.theme === 'neon' ? 'purple' : 'neon';
+        if (this.theme === 'purple') {
+            document.documentElement.setAttribute('data-theme', 'purple');
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+        }
+        localStorage.setItem('theme', this.theme);
+    }
 }">
     <!-- Header -->
     <header class="header">
         <div class="header-left">
-            <img src="/static/img/lab_flask.svg" alt="Lab Flask" class="header-icon">
+            <img x-show="theme !== 'purple'" src="/static/img/lab_flask.svg" alt="Lab Flask" class="header-icon">
+            <img x-show="theme === 'purple'" src="/static/img/lab_flask_purp.svg" alt="Lab Flask" class="header-icon" x-cloak>
             <h1 class="header-title">LucidLink Labs | LucidLink Connect Manager</h1>
         </div>
-        <div class="header-right" x-data="{ userMenuOpen: false }">
+        <div class="header-right">
+            <!-- Theme toggle -->
+            <button class="btn-theme-toggle" @click="toggleTheme()" :title="theme === 'neon' ? 'Switch to purple theme' : 'Switch to neon theme'">
+                <!-- Neon: show zap icon -->
+                <svg x-show="theme === 'neon'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                <!-- Purple: show sparkles icon -->
+                <svg x-show="theme === 'purple'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" x-cloak>
+                    <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"></path>
+                    <path d="M19 13l.75 2.25L22 16l-2.25.75L19 19l-.75-2.25L16 16l2.25-.75L19 13z"></path>
+                    <path d="M5 17l.5 1.5L7 19l-1.5.5L5 21l-.5-1.5L3 19l1.5-.5L5 17z"></path>
+                </svg>
+            </button>
             {% if user_email %}
-            <div class="user-menu">
+            <div class="user-menu" x-data="{ userMenuOpen: false }">
                 <button class="user-menu-btn" @click="userMenuOpen = !userMenuOpen" @click.away="userMenuOpen = false">
                     <span class="user-email">{{ user_email }}</span>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

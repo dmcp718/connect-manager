@@ -95,8 +95,17 @@ DELETE /api/auth/users/{id}            # Delete user (admin)
 
 ## Brand Guidelines
 - **Colors**: Charcoal (#151519), Neon (#B0FB15), Indigo (#5E53E0)
+- **Purple theme**: Accent (#A366C6), Hover (#BD90D6), Success (#4ADE80), Text (#EBE8E0)
 - **Typography**: Aeonik (headings), Inter (body)
 - **Icons**: Lucide SVG, **Case**: Sentence case only
+
+## Theme System
+- CSS-only via `[data-theme="purple"]` selector overriding `:root` variables
+- Toggle in header (`base.html`), persisted to `localStorage` key `theme`
+- Anti-flash `<script>` in `base.html` and `login.html` applies theme before render
+- Purple logo: `app/static/img/lab_flask_purp.svg`
+- Hardcoded `rgba(176,251,21,...)` values need explicit purple overrides (not covered by CSS variable remapping)
+- No backend involvement — purely client-side
 
 ## AWS IAM Actions
 S3 bucket notification actions (do NOT add "Configuration" suffix):

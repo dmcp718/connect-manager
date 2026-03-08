@@ -66,6 +66,66 @@
 }
 
 /* ============================================
+   Purple Theme Overrides
+   ============================================ */
+[data-theme="purple"] {
+    /* Remap neon → purple accent */
+    --color-neon: #A366C6;
+    --color-indigo: #7C5CBF;
+
+    /* Status colors */
+    --color-success: #4ADE80;
+
+    /* Text */
+    --color-sand: #EBE8E0;
+}
+
+/* Hardcoded rgba(176,251,21,...) overrides for purple theme */
+[data-theme="purple"] .badge-success {
+    background-color: rgba(163, 102, 198, 0.2);
+}
+
+[data-theme="purple"] .form-input:focus,
+[data-theme="purple"] .form-select:focus {
+    box-shadow: 0 0 0 2px rgba(163, 102, 198, 0.2);
+}
+
+[data-theme="purple"] .btn-neon:hover:not(:disabled) {
+    background-color: rgba(163, 102, 198, 0.1);
+    box-shadow: 0 0 12px rgba(163, 102, 198, 0.3);
+}
+
+[data-theme="purple"] .btn-outline-neon:hover:not(:disabled) {
+    background-color: rgba(163, 102, 198, 0.1);
+    box-shadow: 0 0 12px rgba(163, 102, 198, 0.3);
+}
+
+[data-theme="purple"] .alert-success {
+    background-color: rgba(74, 222, 128, 0.15);
+    border-color: var(--color-success);
+    color: var(--color-success);
+}
+
+[data-theme="purple"] .modal input:focus,
+[data-theme="purple"] .modal textarea:focus,
+[data-theme="purple"] .modal select:focus {
+    box-shadow: 0 0 0 2px rgba(163, 102, 198, 0.15);
+}
+
+[data-theme="purple"] .sqs-status-badge.active {
+    background-color: rgba(163, 102, 198, 0.15);
+}
+
+/* Purple theme: toggle button hover */
+[data-theme="purple"] .btn-theme-toggle:hover {
+    border-color: var(--color-neon);
+}
+
+[data-theme="purple"] .btn-theme-toggle svg {
+    stroke: var(--color-neon);
+}
+
+/* ============================================
    Reset & Base
    ============================================ */
 *, *::before, *::after {
@@ -2163,6 +2223,174 @@ p {
     font-family: 'Consolas', 'Monaco', monospace;
     font-size: 0.8125rem;
     color: var(--color-neon);
+}
+
+/* ============================================
+   Purple Theme Override
+   ============================================ */
+[data-theme="purple"] {
+    --color-neon: #A366C6;
+    --color-success: #4ADE80;
+    --color-text: #EBE8E0;
+    --color-text-secondary: #C8C5BF;
+    --color-text-muted: #A5A29E;
+}
+
+/* Purple icon filters */
+[data-theme="purple"] .icon-neon,
+[data-theme="purple"] .card-icon img {
+    filter: invert(50%) sepia(30%) saturate(600%) hue-rotate(240deg) brightness(90%) contrast(90%);
+}
+
+/* Purple primary button - white text on purple */
+[data-theme="purple"] .btn-primary {
+    background-color: var(--color-neon);
+    color: var(--color-white);
+}
+
+[data-theme="purple"] .btn-primary:hover:not(:disabled) {
+    background-color: #BD90D6;
+}
+
+/* Purple outline buttons */
+[data-theme="purple"] .btn-neon,
+[data-theme="purple"] .btn-outline-neon {
+    color: var(--color-neon);
+    border-color: var(--color-neon);
+}
+
+[data-theme="purple"] .btn-neon:hover:not(:disabled),
+[data-theme="purple"] .btn-outline-neon:hover:not(:disabled) {
+    background-color: rgba(163, 102, 198, 0.1);
+    box-shadow: 0 0 12px rgba(163, 102, 198, 0.3);
+}
+
+/* Purple form focus states */
+[data-theme="purple"] .form-input:focus,
+[data-theme="purple"] .form-select:focus {
+    border-color: var(--color-neon);
+    box-shadow: 0 0 0 2px rgba(163, 102, 198, 0.2);
+}
+
+/* Purple alert-success */
+[data-theme="purple"] .alert-success {
+    background-color: rgba(74, 222, 128, 0.15);
+    border-color: var(--color-success);
+    color: var(--color-success);
+}
+
+/* Purple progress bar gradient */
+[data-theme="purple"] .progress-fill {
+    background: linear-gradient(90deg, var(--color-indigo) 0%, var(--color-neon) 100%);
+}
+
+/* Purple checkbox accent */
+[data-theme="purple"] input[type="checkbox"] {
+    accent-color: var(--color-neon);
+}
+
+/* Purple badge-success */
+[data-theme="purple"] .badge-success {
+    background-color: rgba(74, 222, 128, 0.2);
+    color: var(--color-success);
+}
+
+/* Purple text-success */
+[data-theme="purple"] .text-success {
+    color: var(--color-success);
+}
+
+/* Purple search highlight focus */
+[data-theme="purple"] .search-input:focus {
+    border-color: var(--color-neon);
+    box-shadow: 0 0 0 2px rgba(163, 102, 198, 0.15);
+}
+
+/* Purple modal input focus */
+[data-theme="purple"] .modal input:focus,
+[data-theme="purple"] .modal textarea:focus,
+[data-theme="purple"] .modal select:focus {
+    border-color: var(--color-neon);
+    box-shadow: 0 0 0 2px rgba(163, 102, 198, 0.15);
+}
+
+/* Purple SQS active badge */
+[data-theme="purple"] .sqs-status-badge.active {
+    background-color: rgba(74, 222, 128, 0.15);
+    color: var(--color-success);
+}
+
+/* Purple Account tab overrides */
+[data-theme="purple"] .badge-you {
+    background: rgba(163, 102, 198, 0.15);
+    color: var(--color-neon);
+}
+
+[data-theme="purple"] .badge-admin {
+    background: rgba(163, 102, 198, 0.15);
+    color: #BD90D6;
+}
+
+[data-theme="purple"] #password-result .alert-success {
+    background: rgba(74, 222, 128, 0.1);
+    color: var(--color-success);
+    border-color: rgba(74, 222, 128, 0.2);
+}
+
+[data-theme="purple"] .card-alert-success {
+    background: rgba(74, 222, 128, 0.1);
+    color: var(--color-success);
+    border-bottom-color: rgba(74, 222, 128, 0.2);
+}
+
+[data-theme="purple"] .account-avatar,
+[data-theme="purple"] .user-avatar {
+    background: var(--color-neon);
+}
+
+[data-theme="purple"] .btn-icon-promote:hover {
+    background: rgba(163, 102, 198, 0.15);
+    color: #BD90D6;
+}
+
+[data-theme="purple"] .password-form .form-input:focus {
+    border-color: var(--color-neon);
+    box-shadow: 0 0 0 2px rgba(163, 102, 198, 0.2);
+}
+
+/* ============================================
+   Theme Toggle Button
+   ============================================ */
+.btn-theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--color-gray-70);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--transition-fast), background-color var(--transition-fast);
+    margin-right: var(--space-md);
+    flex-shrink: 0;
+}
+
+.btn-theme-toggle:hover {
+    border-color: var(--color-neon);
+    background-color: var(--color-gray-80);
+}
+
+.btn-theme-toggle svg {
+    width: 18px;
+    height: 18px;
+    stroke: var(--color-neon);
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: stroke var(--transition-fast);
 }
 
 /* Alpine x-cloak */
