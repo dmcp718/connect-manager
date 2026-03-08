@@ -21,6 +21,14 @@ class S3Item:
     size_formatted: str = ""
 
 
+@dataclass
+class S3ListResult:
+    """Result of listing S3 objects with pagination metadata."""
+    items: List[S3Item]
+    total_count: int
+    is_truncated: bool = False
+
+
 class S3Service:
     """Async S3 service using boto3."""
 
@@ -90,52 +98,71 @@ class S3Service:
                 raise ValueError("Access denied - check your credentials")
             raise ValueError(f"Error listing buckets: {e}")
 
-    async def list_objects(self, bucket: str, prefix: str = "") -> List[S3Item]:
-        """List objects in a bucket with a given prefix."""
-        items: List[S3Item] = []
+    async def list_objects(self, bucket: str, prefix: str = "", max_items: int = 5000) -> "S3ListResult":
+        """List objects in a bucket with a given prefix, handling pagination."""
+        folders: List[S3Item] = []
+        files: List[S3Item] = []
+        is_truncated = False
 
         try:
-            response = await self._run_sync(
-                self.client.list_objects_v2,
-                Bucket=bucket,
-                Prefix=prefix,
-                Delimiter="/",
-            )
+            kwargs = {"Bucket": bucket, "Prefix": prefix, "Delimiter": "/"}
 
-            # Folders (CommonPrefixes)
-            if "CommonPrefixes" in response:
-                for p in response["CommonPrefixes"]:
-                    key = p["Prefix"]
-                    name = key.rstrip("/").split("/")[-1]
-                    items.append(S3Item(
-                        name=name,
-                        key=key,
-                        is_folder=True,
-                    ))
+            while True:
+                response = await self._run_sync(
+                    self.client.list_objects_v2, **kwargs
+                )
 
-            # Files (Contents)
-            if "Contents" in response:
-                for obj in response["Contents"]:
-                    key = obj["Key"]
-                    # Skip the prefix itself
-                    if key == prefix:
-                        continue
+                # Folders (CommonPrefixes)
+                if "CommonPrefixes" in response:
+                    for p in response["CommonPrefixes"]:
+                        key = p["Prefix"]
+                        name = key.rstrip("/").split("/")[-1]
+                        folders.append(S3Item(
+                            name=name,
+                            key=key,
+                            is_folder=True,
+                        ))
 
-                    name = key.split("/")[-1]
-                    size_mb = obj["Size"] / (1024 * 1024)
+                # Files (Contents)
+                if "Contents" in response:
+                    for obj in response["Contents"]:
+                        key = obj["Key"]
+                        if key == prefix:
+                            continue
+                        name = key.split("/")[-1]
+                        size_mb = obj["Size"] / (1024 * 1024)
+                        files.append(S3Item(
+                            name=name,
+                            key=key,
+                            is_folder=False,
+                            size=size_mb,
+                            size_formatted=self._format_size(obj["Size"]),
+                        ))
 
-                    items.append(S3Item(
-                        name=name,
-                        key=key,
-                        is_folder=False,
-                        size=size_mb,
-                        size_formatted=self._format_size(obj["Size"]),
-                    ))
+                # Check if we've hit the cap
+                if len(folders) + len(files) >= max_items:
+                    is_truncated = True
+                    break
+
+                # Continue if more results
+                if response.get("IsTruncated"):
+                    kwargs["ContinuationToken"] = response["NextContinuationToken"]
+                else:
+                    break
 
         except ClientError as e:
             raise ValueError(f"Error listing objects: {e}")
 
-        return items
+        # Sort: folders first (alpha), then files (alpha)
+        folders.sort(key=lambda x: x.name.lower())
+        files.sort(key=lambda x: x.name.lower())
+        items = folders + files
+
+        return S3ListResult(
+            items=items,
+            total_count=len(items),
+            is_truncated=is_truncated,
+        )
 
     async def list_all_objects(self, bucket: str, prefix: str = "") -> List[str]:
         """List all objects recursively (no delimiter)."""

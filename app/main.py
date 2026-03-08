@@ -686,8 +686,12 @@ async def browse_datastore(
     request: Request,
     datastore_id: str,
     prefix: str = "",
+    page: int = 1,
+    page_size: int = 50,
 ):
     """Browse S3 for a specific DataStore."""
+    from math import ceil
+
     state = get_session_from_request(request)
     cred = state.get_datastore_by_id(datastore_id)
     if not cred:
@@ -705,14 +709,28 @@ async def browse_datastore(
 
     try:
         bucket = cred.get("bucket_name")
-        items = await s3_service.list_objects(bucket, prefix)
+        result = await s3_service.list_objects(bucket, prefix)
+
+        # Pagination
+        page_size = max(10, min(page_size, 200))
+        total_items = result.total_count
+        total_pages = max(1, ceil(total_items / page_size))
+        page = max(1, min(page, total_pages))
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_items = result.items[start:end]
 
         return templates.TemplateResponse("partials/datastore_browser.html", {
             "request": request,
             "datastore_id": datastore_id,
             "bucket": bucket,
             "prefix": prefix,
-            "items": items,
+            "items": page_items,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "total_items": total_items,
+            "is_truncated": result.is_truncated,
         })
 
     except Exception as e:
@@ -728,6 +746,7 @@ async def browse_datastore_back(
     request: Request,
     datastore_id: str,
     prefix: str = "",
+    page_size: int = 50,
 ):
     """Navigate back in DataStore S3 browser."""
     _ = get_session_from_request(request)  # Verify authenticated
@@ -739,7 +758,7 @@ async def browse_datastore_back(
         if new_prefix:
             new_prefix += "/"
 
-    return await browse_datastore(request, datastore_id, new_prefix)
+    return await browse_datastore(request, datastore_id, new_prefix, page=1, page_size=page_size)
 
 
 # ============== Import Operations ==============

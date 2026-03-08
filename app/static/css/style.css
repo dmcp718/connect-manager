@@ -1073,6 +1073,85 @@ p {
     color: var(--color-gray-50);
 }
 
+/* Browser Page Info Bar */
+.browser-page-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-sm) var(--space-md);
+    margin-bottom: var(--space-sm);
+    font-size: 0.8125rem;
+    color: var(--color-gray-40);
+}
+
+.browser-item-count {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.browser-page-size {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.browser-page-size label {
+    font-size: 0.8125rem;
+    color: var(--color-gray-40);
+}
+
+.browser-page-size .form-select-sm {
+    padding: 4px 8px;
+    font-size: 0.8125rem;
+    background: var(--color-gray-90);
+    border: 1px solid var(--color-gray-70);
+    border-radius: var(--radius-sm);
+    color: var(--color-white);
+    cursor: pointer;
+}
+
+/* Browser Pagination */
+.browser-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    margin-top: var(--space-sm);
+    border-top: 1px solid var(--color-gray-80);
+}
+
+.page-numbers {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.page-btn {
+    min-width: 32px;
+    padding: 4px 8px;
+    font-size: 0.8125rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.page-btn-active {
+    background-color: var(--color-neon) !important;
+    color: var(--color-charcoal) !important;
+    border-color: var(--color-neon) !important;
+    font-weight: 600;
+    opacity: 1 !important;
+}
+
+.page-ellipsis {
+    padding: 4px 6px;
+    font-size: 0.8125rem;
+    color: var(--color-gray-50);
+}
+
 /* ============================================
    Not Connected State
    ============================================ */
@@ -1273,7 +1352,7 @@ p {
 }
 
 .settings-container {
-    max-width: 600px;
+    max-width: 800px;
 }
 
 /* ============================================
@@ -2318,6 +2397,13 @@ p {
 [data-theme="purple"] .sqs-status-badge.active {
     background-color: rgba(74, 222, 128, 0.15);
     color: var(--color-success);
+}
+
+/* Purple pagination active page */
+[data-theme="purple"] .page-btn-active {
+    background-color: var(--color-neon) !important;
+    color: var(--color-white) !important;
+    border-color: var(--color-neon) !important;
 }
 
 /* Purple Account tab overrides */

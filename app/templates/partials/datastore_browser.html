@@ -5,7 +5,7 @@
         {% if prefix %}
         <button
             class="btn btn-ghost"
-            hx-get="/api/browse/{{ datastore_id }}/back?prefix={{ prefix }}"
+            hx-get="/api/browse/{{ datastore_id }}/back?prefix={{ prefix }}&page_size={{ page_size }}"
             hx-target="#datastore-browser-{{ datastore_id }}"
             hx-swap="innerHTML"
         >
@@ -21,13 +21,42 @@
         </span>
         <button
             class="btn btn-ghost"
-            hx-get="/api/browse/{{ datastore_id }}?prefix={{ prefix }}"
+            hx-get="/api/browse/{{ datastore_id }}?prefix={{ prefix }}&page={{ page }}&page_size={{ page_size }}"
             hx-target="#datastore-browser-{{ datastore_id }}"
             hx-swap="innerHTML"
         >
             <img src="/static/img/icons/refresh.svg" alt="" class="icon icon-sm icon-white"> Refresh
         </button>
     </div>
+
+    <!-- Page Info Bar -->
+    {% if total_items > 0 %}
+    <div class="browser-page-info">
+        <span class="browser-item-count">
+            {% set start_item = (page - 1) * page_size + 1 %}
+            {% set end_item = [page * page_size, total_items] | min %}
+            {{ start_item }}–{{ end_item }} of {{ total_items }} items
+            {% if is_truncated %}<span class="text-warning">(results capped)</span>{% endif %}
+        </span>
+        <div class="browser-page-size">
+            <label for="page-size-{{ datastore_id }}">Show</label>
+            <select
+                id="page-size-{{ datastore_id }}"
+                hx-get="/api/browse/{{ datastore_id }}"
+                hx-target="#datastore-browser-{{ datastore_id }}"
+                hx-swap="innerHTML"
+                hx-include="this"
+                hx-vals='{"prefix": "{{ prefix }}", "page": "1"}'
+                name="page_size"
+                class="form-select form-select-sm"
+            >
+                <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
+                <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+            </select>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Browser Contents -->
     <div class="browser-list">
@@ -42,7 +71,7 @@
                 </span>
                 <button
                     class="browser-name btn-link"
-                    hx-get="/api/browse/{{ datastore_id }}?prefix={{ item.key }}"
+                    hx-get="/api/browse/{{ datastore_id }}?prefix={{ item.key }}&page_size={{ page_size }}"
                     hx-target="#datastore-browser-{{ datastore_id }}"
                     hx-swap="innerHTML"
                 >
@@ -86,4 +115,67 @@
         </div>
         {% endif %}
     </div>
+
+    <!-- Pagination Controls -->
+    {% if total_pages > 1 %}
+    <div class="browser-pagination">
+        <!-- Previous -->
+        {% if page > 1 %}
+        <button
+            class="btn btn-ghost btn-sm page-btn"
+            hx-get="/api/browse/{{ datastore_id }}?prefix={{ prefix }}&page={{ page - 1 }}&page_size={{ page_size }}"
+            hx-target="#datastore-browser-{{ datastore_id }}"
+            hx-swap="innerHTML"
+        >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            Prev
+        </button>
+        {% else %}
+        <button class="btn btn-ghost btn-sm page-btn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            Prev
+        </button>
+        {% endif %}
+
+        <!-- Page Numbers -->
+        <div class="page-numbers">
+            {% for p in range(1, total_pages + 1) %}
+                {% if p == 1 or p == total_pages or (p >= page - 1 and p <= page + 1) %}
+                    <button
+                        class="btn btn-ghost btn-sm page-btn {% if p == page %}page-btn-active{% endif %}"
+                        {% if p != page %}
+                        hx-get="/api/browse/{{ datastore_id }}?prefix={{ prefix }}&page={{ p }}&page_size={{ page_size }}"
+                        hx-target="#datastore-browser-{{ datastore_id }}"
+                        hx-swap="innerHTML"
+                        {% else %}
+                        disabled
+                        {% endif %}
+                    >
+                        {{ p }}
+                    </button>
+                {% elif p == 2 or p == total_pages - 1 %}
+                    <span class="page-ellipsis">...</span>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        <!-- Next -->
+        {% if page < total_pages %}
+        <button
+            class="btn btn-ghost btn-sm page-btn"
+            hx-get="/api/browse/{{ datastore_id }}?prefix={{ prefix }}&page={{ page + 1 }}&page_size={{ page_size }}"
+            hx-target="#datastore-browser-{{ datastore_id }}"
+            hx-swap="innerHTML"
+        >
+            Next
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 6 15 12 9 18"></polyline></svg>
+        </button>
+        {% else %}
+        <button class="btn btn-ghost btn-sm page-btn" disabled>
+            Next
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 6 15 12 9 18"></polyline></svg>
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
