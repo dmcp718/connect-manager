@@ -6,25 +6,26 @@ A web application for importing S3 objects into LucidLink filespaces using the E
 
 | Branch | Description |
 |--------|-------------|
-| `main` | Single-user mode, no authentication required |
-| `multi-user` | Multi-user with JWT authentication, admin/user roles, production-ready |
+| `main` | Multi-user with JWT authentication, admin/user roles, production-ready |
+| `multi-user` | Legacy multi-user branch (merged to main) |
 | `aws-deploy` | AWS deployment with Terraform, ALB, EFS, and local LucidLink API container |
 
 ## Features
 
 - **DataStore Management** - Create, view, and delete S3 DataStores in LucidLink
-- **S3 Browser** - Navigate and explore S3 buckets linked to DataStores
+- **S3 Browser** - Navigate and explore S3 buckets with per-card pagination (50 items/page default)
 - **Bulk Import** - Import individual files or entire folders with parallel processing
 - **AWS SQS Event Stream** - Automatic imports triggered by S3 event notifications
 - **Job Queue** - Track import progress with real-time updates
 - **Activity Logs** - Real-time SSE-based logging
 
-### Multi-User Branch Additional Features
+### Additional Features
 - **User Authentication** - JWT-based login with secure httponly cookies
 - **Role-Based Access** - Admin and standard user roles
 - **User Management** - Admins can add/remove users
 - **Per-User Data Isolation** - Each user's DataStore credentials are private
 - **Encrypted Secrets** - AWS credentials encrypted at rest (Fernet AES-128)
+- **Theme Toggle** - Neon (default) and warm purple themes, persisted to localStorage
 - **Production Deployment** - Caddy reverse proxy with automatic HTTPS
 - **AWS Deployment** - Terraform + deploy.sh with ALB, ASG auto-recovery, EFS persistence
 
@@ -196,7 +197,7 @@ Swagger UI is available at your API endpoint + `/docs`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LL_API_HOST` | `https://dev-admin-api...` | LucidLink API endpoint |
+| `LL_API_HOST` | `https://admin-api.solutions-eng.online/api/v1` | LucidLink API endpoint |
 | `VALKEY_HOST` | `localhost` | Valkey/Redis host |
 | `VALKEY_PORT` | `6379` | Valkey/Redis port |
 | `DATA_DIR` | `/data` | Persistent data directory |
