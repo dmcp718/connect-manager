@@ -2,7 +2,7 @@
 
 This is the core operation — creating ExternalEntries that map S3 objects into the filespace.
 
-> **See also:** [Key Concepts — Lazy loading](10-key-concepts.md#lazy-loading), [Path mapping](10-key-concepts.md#path-mapping), [Idempotency](10-key-concepts.md#idempotency)
+> **See also:** [Key Concepts — Lazy loading](10-key-concepts.md#lazy-loading), [Path mapping](10-key-concepts.md#path-mapping), [Multiple links](10-key-concepts.md#multiple-links)
 
 ## API
 

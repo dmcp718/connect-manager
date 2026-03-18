@@ -1,6 +1,6 @@
 # Deploying the Integration Guide
 
-Deploy the LucidLink Connect Integration Guide as a static site with automatic HTTPS.
+Deploy the LucidLink Connect Integration Guide as a static site behind the shared Caddy reverse proxy.
 
 **URL:** https://wrkflw-guide.solutions-eng.online
 
@@ -9,8 +9,22 @@ Deploy the LucidLink Connect Integration Guide as a static site with automatic H
 ## Prerequisites
 
 - Docker and Docker Compose installed on the server
-- Ports 80 and 443 open (firewall / port forwarding)
+- Shared Caddy network (`caddy_shared`) already running
 - DNS A record for `wrkflw-guide.solutions-eng.online` pointing to the server's public IP
+
+## Architecture
+
+```
+Internet → :443 (shared Caddy + auto-HTTPS) → wrkflw-guide:8080 → static files from /srv
+```
+
+| Component | Details |
+|-----------|---------|
+| Web server | Caddy 2 (Alpine), plain HTTP on :8080 |
+| TLS | Handled by shared Caddy (Let's Encrypt) |
+| Content | MkDocs Material static HTML (built at image build time) |
+| Crawler blocking | robots.txt + meta tags + X-Robots-Tag header + bot UA filter |
+| Network | `caddy_shared` (external Docker network) |
 
 ## Initial deployment
 
@@ -22,7 +36,23 @@ git clone git@bitbucket.org:lucidlink/lucidlink-connect-web-app.git
 cd lucidlink-connect-web-app/docs
 ```
 
-### 2. Build and start
+### 2. Add to shared Caddy
+
+Add this block to the shared Caddyfile:
+
+```
+wrkflw-guide.solutions-eng.online {
+    reverse_proxy wrkflw-guide:8080
+}
+```
+
+Reload shared Caddy:
+
+```bash
+docker exec caddy caddy reload --config /etc/caddy/Caddyfile
+```
+
+### 3. Build and start
 
 ```bash
 docker compose up -d --build
@@ -30,19 +60,19 @@ docker compose up -d --build
 
 This will:
 - Build the MkDocs static site inside a container
-- Start Caddy to serve it on ports 80/443
-- Automatically provision a Let's Encrypt TLS certificate
+- Start Caddy to serve it on port 8080 (HTTP only)
+- Join the `caddy_shared` network so the shared Caddy can reach it
 
-### 3. Verify
+### 4. Verify
 
 ```bash
 # Check container is running
 docker compose ps
 
-# Check logs for successful TLS provisioning
+# Check logs
 docker compose logs guide
 
-# Test HTTPS
+# Test HTTPS (via shared Caddy)
 curl -I https://wrkflw-guide.solutions-eng.online
 ```
 
@@ -58,61 +88,47 @@ git pull
 docker compose up -d --build
 ```
 
-The rebuild takes about 10 seconds. Caddy restarts with zero downtime and reuses the existing TLS certificate from the `caddy_data` volume.
+The rebuild takes about 10 seconds. No TLS impact — the shared Caddy keeps its certificates.
 
-## Architecture
+## Local development
 
+Run locally on port 8080 (no shared Caddy needed):
+
+```bash
+docker compose up -d --build
+open http://127.0.0.1:8080
 ```
-Internet → :443 (Caddy + auto-HTTPS) → static files from /srv
-```
-
-| Component | Details |
-|-----------|---------|
-| Web server | Caddy 2 (Alpine) |
-| TLS | Let's Encrypt, auto-renewed |
-| Content | MkDocs Material static HTML (built at image build time) |
-| Crawler blocking | robots.txt + meta tags + X-Robots-Tag header + bot UA filter |
-
-### Docker volumes
-
-| Volume | Purpose |
-|--------|---------|
-| `caddy_data` | TLS certificates (persists across rebuilds) |
-| `caddy_config` | Caddy runtime config |
 
 ## Changing the domain
 
 1. Create a DNS A record for the new domain
-2. Edit `docker-compose.yml` — change the `DOMAIN` environment variable
-3. Rebuild:
+2. Update the shared Caddyfile with the new domain
+3. Reload shared Caddy:
 
 ```bash
-docker compose up -d --build
+docker exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```
-
-Caddy will automatically provision a new certificate for the new domain.
 
 ## Troubleshooting
-
-### Certificate not provisioning
-
-```bash
-docker compose logs guide | grep -i "tls\|cert\|acme"
-```
-
-Common causes:
-- Port 80 not reachable from the internet (needed for ACME HTTP challenge)
-- DNS not yet propagated — verify with `dig wrkflw-guide.solutions-eng.online`
-- Firewall blocking inbound 80/443
 
 ### Container won't start
 
 ```bash
-# Check if ports are already in use
-ss -tlnp | grep -E ':80|:443'
+# Check if port 8080 is already in use
+ss -tlnp | grep :8080
 
 # Check container logs
 docker compose logs --tail 50 guide
+```
+
+### Shared Caddy can't reach the container
+
+```bash
+# Verify container is on the caddy_shared network
+docker network inspect caddy_shared | grep wrkflw-guide
+
+# Test from shared Caddy
+docker exec caddy wget -qO- http://wrkflw-guide:8080 | head -5
 ```
 
 ### Force rebuild (no cache)
@@ -122,21 +138,8 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
-### View Caddy config at runtime
-
-```bash
-docker compose exec guide caddy list-modules
-docker compose exec guide cat /etc/caddy/Caddyfile
-```
-
 ## Stopping the site
 
 ```bash
 docker compose down
-```
-
-To also remove TLS certificates:
-
-```bash
-docker compose down -v
 ```

@@ -27,13 +27,9 @@ Filespace: /Reports/2024-Q3-Summary.pdf
 
 The `objectId` in the import payload is always the raw S3 key (e.g., `photos/2025/image.jpg`), while `path` is the filespace destination you choose — with a leading slash and whatever directory structure you define. The only requirement is that parent folders exist before importing files into them (see [Folder creation order](#folder-creation-order) below).
 
-## Idempotency
+## Multiple links
 
-Importing the same S3 object twice returns `409 Conflict` or `400` with "already exists". Both are safe to treat as no-ops. This makes it safe to re-run imports without duplicating entries.
-
-## Rate limiting
-
-For bulk imports, batch concurrent requests (25 at a time is a reasonable default) with a small delay between batches (~50ms) to avoid overwhelming the API.
+It is possible to link an S3 object to multiple filespace entries at different paths in the same filespace, or even across multiple filespaces. This means importing the same object twice to the same path will create a duplicate entry — not return an error. Keep in mind that each link is billed as additional storage.
 
 ## Folder creation order
 

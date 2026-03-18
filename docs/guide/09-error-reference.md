@@ -24,7 +24,7 @@
 
 ### Import returns 409 or 400 "already exists"
 
-Both responses mean the ExternalEntry already exists at that path. This is safe to skip — imports are idempotent. See [Key Concepts — Idempotency](10-key-concepts.md#idempotency).
+Both responses mean the ExternalEntry already exists at that path. Note that the API does allow linking the same object to multiple paths — see [Key Concepts — Multiple links](10-key-concepts.md#multiple-links).
 
 ### Folder creation returns 409
 

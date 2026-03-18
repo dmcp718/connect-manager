@@ -4,15 +4,10 @@ services:
     container_name: wrkflw-guide
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    environment:
-      - DOMAIN=wrkflw-guide.solutions-eng.online
-    volumes:
-      - caddy_data:/data
-      - caddy_config:/config
+      - "8080:8080"
+    networks:
+      - caddy_shared
 
-volumes:
-  caddy_data:
-  caddy_config:
+networks:
+  caddy_shared:
+    external: true
