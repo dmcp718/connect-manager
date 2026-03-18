@@ -1,0 +1,26 @@
+{$DOMAIN:localhost} {
+	root * /srv
+	file_server
+
+	# Clean URLs — serve .html files without extension
+	try_files {path} {path}/ {path}.html /index.html
+
+	# Cache static assets
+	@static path *.css *.js *.svg *.png *.jpg *.woff2
+	header @static Cache-Control "public, max-age=604800"
+
+	# Security headers
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+	}
+
+	# Block known bots that ignore robots.txt
+	@bots header_regexp User-Agent (?i)(googlebot|bingbot|yandex|baidu|duckduckbot|slurp|sogou|exabot|facebot|ia_archiver|semrush|ahrefs|mj12bot|dotbot|petalbot|bytespider|gptbot|chatgpt|claude|anthropic|ccbot|amazonbot)
+	respond @bots 403
+
+	# Gzip compression
+	encode gzip
+}

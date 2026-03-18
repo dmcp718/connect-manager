@@ -30,6 +30,7 @@ secrets.json
 # Build
 dist/
 build/
+docs/site/
 
 # Terraform
 terraform/.terraform/

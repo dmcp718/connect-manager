@@ -1,0 +1,66 @@
+site_name: LucidLink Connect — Integration Guide
+site_description: Import S3 objects into LucidLink filespaces using the External Data Store API
+docs_dir: guide
+site_dir: site
+
+theme:
+  name: material
+  custom_dir: guide/overrides
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: lime
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: lime
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - toc:
+      permalink: true
+
+nav:
+  - Home: README.md
+  - Getting Started:
+    - Prerequisites: 01-prerequisites.md
+    - Authentication: 02-authentication.md
+  - API Reference:
+    - Filespaces: 03-filespaces.md
+    - DataStores: 04-data-stores.md
+    - Folder Structure: 06-folder-structure.md
+    - Importing Objects: 07-importing-objects.md
+  - Guides:
+    - Browsing S3: 05-browsing-s3.md
+    - Complete Workflow: 08-complete-workflow.md
+  - Reference:
+    - Error Reference: 09-error-reference.md
+    - Key Concepts: 10-key-concepts.md
