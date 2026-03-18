@@ -6,14 +6,26 @@ ExternalEntries are **metadata references**, not copies. No S3 data is transferr
 
 ## Path mapping
 
-Files are organized under the bucket name in the filespace:
+The mapping between S3 object paths and LucidLink filespace paths is **flexible and entirely up to the administrator**. There is no required structure — you can map S3 objects to any location in the filespace.
+
+The examples in this guide use a convention that mirrors the S3 bucket and prefix hierarchy 1:1 into the filespace:
 
 ```
 S3:        s3://my-bucket/photos/2025/image.jpg
 Filespace: /my-bucket/photos/2025/image.jpg
 ```
 
-The `objectId` in the import payload is the raw S3 key (`photos/2025/image.jpg`), while `path` is the full filespace path with leading slash and bucket name prefix.
+But you could just as easily flatten, reorganize, or rename paths to fit your team's workflow:
+
+```
+S3:        s3://client-raw-assets/project-alpha/footage/clip001.mov
+Filespace: /Projects/Alpha/footage/clip001.mov
+
+S3:        s3://archive-2024/q3/reports/summary.pdf
+Filespace: /Reports/2024-Q3-Summary.pdf
+```
+
+The `objectId` in the import payload is always the raw S3 key (e.g., `photos/2025/image.jpg`), while `path` is the filespace destination you choose — with a leading slash and whatever directory structure you define. The only requirement is that parent folders exist before importing files into them (see [Folder creation order](#folder-creation-order) below).
 
 ## Idempotency
 
