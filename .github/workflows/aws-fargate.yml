@@ -1,0 +1,282 @@
+name: aws-fargate
+
+on:
+  push:
+    branches: [aws-fargate]
+    tags: ["v*"]
+  pull_request:
+    branches: [aws-fargate]
+
+permissions:
+  id-token: write   # Required for aws-actions/configure-aws-credentials OIDC.
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: connect-prod
+  WEB_SERVICE: connect-prod-web
+  WORKER_SERVICE: connect-prod-worker
+  WEB_TASK_DEF_FAMILY: connect-prod-web
+  WORKER_TASK_DEF_FAMILY: connect-prod-worker
+  MIGRATE_TASK_DEF_FAMILY: connect-prod-migrate
+  WEB_REPO: connect-web
+  WORKER_REPO: connect-worker
+
+jobs:
+  lint-test:
+    name: Lint + typecheck + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Sync deps
+        working-directory: app
+        run: uv sync --frozen
+
+      - name: ruff check
+        working-directory: app
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        working-directory: app
+        run: uv run ruff format --check .
+
+      - name: mypy
+        working-directory: app
+        run: uv run mypy .
+
+      - name: pytest (excludes real_aws + slow)
+        working-directory: app
+        run: uv run pytest -m "not real_aws and not slow" --maxfail=3
+
+  terraform:
+    name: Terraform fmt + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: terraform fmt -check
+        working-directory: terraform
+        run: terraform fmt -check -recursive
+
+      - name: terraform init -backend=false
+        working-directory: terraform
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        working-directory: terraform
+        run: terraform validate
+
+  build-push:
+    name: Build + push images to ECR
+    needs: [lint-test, terraform]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      web_image_uri: ${{ steps.meta.outputs.web_image_uri }}
+      worker_image_uri: ${{ steps.meta.outputs.worker_image_uri }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Compute image tag + URIs
+        id: meta
+        run: |
+          # On tag pushes, use the tag as the image tag (e.g. v0.1.2).
+          # On branch pushes, use the commit short SHA.
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="${GITHUB_SHA::7}"
+          fi
+          registry="${{ steps.ecr.outputs.registry }}"
+          echo "image_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "web_image_uri=$registry/${{ env.WEB_REPO }}:$tag" >> "$GITHUB_OUTPUT"
+          echo "worker_image_uri=$registry/${{ env.WORKER_REPO }}:$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build + push connect-web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: web
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.web_image_uri }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+      - name: Build + push connect-worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: worker
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.worker_image_uri }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,scope=worker,mode=max
+
+  migrate:
+    name: Run alembic upgrade head
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Register migrate task definition revision with new image
+        id: register
+        run: |
+          # Pull current migrate task def, swap the image, register a new revision.
+          aws ecs describe-task-definition \
+            --task-definition "${{ env.MIGRATE_TASK_DEF_FAMILY }}" \
+            --query 'taskDefinition' \
+            > taskdef.json
+          jq --arg img "${{ needs.build-push.outputs.web_image_uri }}" \
+            '.containerDefinitions[0].image = $img
+             | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            taskdef.json > taskdef.new.json
+          new_arn=$(aws ecs register-task-definition \
+            --cli-input-json file://taskdef.new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "task_def_arn=$new_arn" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve VPC subnets + web tasks SG
+        id: net
+        run: |
+          # The web tasks SG is reused for migrate (same Postgres ingress).
+          subnets=$(aws ec2 describe-subnets \
+            --filters "Name=tag:Name,Values=connect-prod-private-*" \
+            --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
+          sg=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=connect-prod-web-tasks" \
+            --query 'SecurityGroups[0].GroupId' --output text)
+          echo "subnets=$subnets" >> "$GITHUB_OUTPUT"
+          echo "sg=$sg" >> "$GITHUB_OUTPUT"
+
+      - name: Run migrate task + wait
+        run: |
+          task_arn=$(aws ecs run-task \
+            --cluster "${{ env.CLUSTER_NAME }}" \
+            --task-definition "${{ steps.register.outputs.task_def_arn }}" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$(echo ${{ steps.net.outputs.subnets }} | tr ',' ' ')],securityGroups=[${{ steps.net.outputs.sg }}],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' --output text)
+
+          echo "Running migration task: $task_arn"
+          aws ecs wait tasks-stopped --cluster "${{ env.CLUSTER_NAME }}" --tasks "$task_arn"
+
+          exit_code=$(aws ecs describe-tasks --cluster "${{ env.CLUSTER_NAME }}" --tasks "$task_arn" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          if [[ "$exit_code" != "0" ]]; then
+            echo "Migration failed with exit code $exit_code"
+            aws ecs describe-tasks --cluster "${{ env.CLUSTER_NAME }}" --tasks "$task_arn"
+            exit 1
+          fi
+          echo "Migration succeeded"
+
+  deploy:
+    name: Update web + worker services
+    needs: [build-push, migrate]
+    runs-on: ubuntu-latest
+    # Tag pushes deploy to the protected environment (manual approval required).
+    environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Register new web task definition revision
+        id: web_tdef
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${{ env.WEB_TASK_DEF_FAMILY }}" \
+            --query 'taskDefinition' \
+            > web.json
+          # Web has lucidlink-api at index 0, web at index 1.
+          jq --arg img "${{ needs.build-push.outputs.web_image_uri }}" \
+            '(.containerDefinitions[] | select(.name=="web")).image = $img
+             | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            web.json > web.new.json
+          new_arn=$(aws ecs register-task-definition \
+            --cli-input-json file://web.new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "task_def_arn=$new_arn" >> "$GITHUB_OUTPUT"
+
+      - name: Register new worker task definition revision
+        id: worker_tdef
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${{ env.WORKER_TASK_DEF_FAMILY }}" \
+            --query 'taskDefinition' \
+            > worker.json
+          jq --arg img "${{ needs.build-push.outputs.worker_image_uri }}" \
+            '(.containerDefinitions[] | select(.name=="worker")).image = $img
+             | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            worker.json > worker.new.json
+          new_arn=$(aws ecs register-task-definition \
+            --cli-input-json file://worker.new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "task_def_arn=$new_arn" >> "$GITHUB_OUTPUT"
+
+      - name: Update web service
+        run: |
+          aws ecs update-service \
+            --cluster "${{ env.CLUSTER_NAME }}" \
+            --service "${{ env.WEB_SERVICE }}" \
+            --task-definition "${{ steps.web_tdef.outputs.task_def_arn }}" \
+            --force-new-deployment \
+            > /dev/null
+
+      - name: Update worker service
+        run: |
+          aws ecs update-service \
+            --cluster "${{ env.CLUSTER_NAME }}" \
+            --service "${{ env.WORKER_SERVICE }}" \
+            --task-definition "${{ steps.worker_tdef.outputs.task_def_arn }}" \
+            --force-new-deployment \
+            > /dev/null
+
+      - name: Wait for services to reach steady state
+        timeout-minutes: 15
+        run: |
+          aws ecs wait services-stable \
+            --cluster "${{ env.CLUSTER_NAME }}" \
+            --services "${{ env.WEB_SERVICE }}" "${{ env.WORKER_SERVICE }}"
+          echo "Both services stable on tag ${{ needs.build-push.outputs.image_tag }}"
