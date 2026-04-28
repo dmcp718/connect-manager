@@ -124,7 +124,9 @@ class JsonFormatter(logging.Formatter):
             payload["exception_type"] = (
                 exc_type.__name__ if exc_type is not None else None
             )
-            payload["exception_message"] = str(exc_value) if exc_value is not None else None
+            payload["exception_message"] = (
+                str(exc_value) if exc_value is not None else None
+            )
             payload["traceback"] = "".join(
                 traceback.format_exception(exc_type, exc_value, exc_tb)
             )

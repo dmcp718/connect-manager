@@ -10,7 +10,7 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Label, Static
 
@@ -45,12 +45,24 @@ class TfvarsFormScreen(Screen):
         ("aws_region", "aws_region", "us-east-1", False, "us-east-1"),
         ("domain", "domain (FQDN)", "", True, "connect.example.com"),
         ("route53_zone_id", "route53_zone_id", "", True, "Z0123456789ABCDEFGHIJ"),
-        ("github_repo", "github_repo", "dmcp718/connect-manager", False, "owner/repo (empty disables OIDC)"),
+        (
+            "github_repo",
+            "github_repo",
+            "dmcp718/connect-manager",
+            False,
+            "owner/repo (empty disables OIDC)",
+        ),
         ("alarms_email", "alarms_email", "", False, "alerts@example.com"),
         ("vpc_cidr", "vpc_cidr", "10.20.0.0/16", False, "10.20.0.0/16"),
         ("rds_instance_class", "rds_instance_class", "db.t4g.micro", False, ""),
         ("rds_multi_az", "rds_multi_az (true/false)", "false", False, "false"),
-        ("elasticache_node_type", "elasticache_node_type", "cache.t4g.micro", False, ""),
+        (
+            "elasticache_node_type",
+            "elasticache_node_type",
+            "cache.t4g.micro",
+            False,
+            "",
+        ),
         ("worker_max_count", "worker_max_count", "8", False, "8"),
     )
 
@@ -58,7 +70,9 @@ class TfvarsFormScreen(Screen):
         yield Header(show_clock=True)
         with VerticalScroll(id="form-pane"):
             yield Static("[b]Step 3 / 8[/b] — terraform.tfvars", id="title")
-            yield Static("Defaults pre-populated from existing tfvars + tfvars.example.")
+            yield Static(
+                "Defaults pre-populated from existing tfvars + tfvars.example."
+            )
             existing = self._load_existing()
             for name, label, default, _required, placeholder in self.FIELDS:
                 yield Label(label)
@@ -125,7 +139,9 @@ class TfvarsFormScreen(Screen):
         # Stash on app state for later screens.
         self.app.state.terraform_dir = self._terraform_dir()
         self.app.state.env = str(values.get("env", "prod"))
-        self.app.state.aws_region = str(values.get("aws_region", self.app.state.aws_region))
+        self.app.state.aws_region = str(
+            values.get("aws_region", self.app.state.aws_region)
+        )
         self.app.state.domain = str(values.get("domain", ""))
         self.app.state.route53_zone_id = str(values.get("route53_zone_id", ""))
         self.app.state.github_repo = str(values.get("github_repo", "")) or None

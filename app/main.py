@@ -10,14 +10,14 @@ import os
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Form, HTTPException, Depends
+from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from services.lucidlink import LucidLinkClient, LL_HOST
 from services.s3_service import S3Service
-from services.user_state import UserSession, user_state_manager, get_user_session
+from services.user_state import UserSession, get_user_session
 from services.job_queue import job_queue
 from services import database as db
 from services.database import shutdown_engine
@@ -26,11 +26,10 @@ from services.activity_logger import ActivityLogger
 from services.shutdown import graceful_lifespan
 from services.metrics import start_metrics_sampler, stop_metrics_sampler
 from services.database import get_engine
-from routes.auth import router as auth_router, get_current_user, get_current_user_optional
+from routes.auth import router as auth_router, get_current_user_optional
 from routes.health import router as health_router
 from middleware.auth import AuthMiddleware
 from middleware.metrics import PrometheusMiddleware
-from models.user import TokenData
 
 
 async def _startup() -> None:
@@ -61,7 +60,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="LucidLink Labs | LucidLink Connect Manager",
     description="S3 to LucidLink Integrator - Multi-user",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Middleware order matters: Starlette executes added middleware in REVERSE
@@ -93,6 +92,7 @@ def get_session_from_request(request: Request) -> UserSession:
 
 # ============== Pages ==============
 
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """Login page."""
@@ -100,18 +100,22 @@ async def login_page(request: Request):
     user = get_current_user_optional(request)
     if user:
         from fastapi.responses import RedirectResponse
+
         return RedirectResponse(url="/", status_code=302)
 
     # Only show default credentials hint if using defaults (dev mode)
     show_default_hint = (
-        os.getenv("ADMIN_EMAIL", "admin@localhost") == "admin@localhost" and
-        os.getenv("ADMIN_PASSWORD", "admin") == "admin"
+        os.getenv("ADMIN_EMAIL", "admin@localhost") == "admin@localhost"
+        and os.getenv("ADMIN_PASSWORD", "admin") == "admin"
     )
 
-    return templates.TemplateResponse("login.html", {
-        "request": request,
-        "show_default_hint": show_default_hint,
-    })
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "show_default_hint": show_default_hint,
+        },
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -127,34 +131,40 @@ async def index(request: Request):
         s3_params = ds.get("s3StorageParams", {})
         ds_id = ds.get("id")
         has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
-        datastores_data.append({
-            "id": ds_id,
-            "name": name,
-            "bucket": s3_params.get("bucketName", ""),
-            "has_credentials": has_creds,
-        })
+        datastores_data.append(
+            {
+                "id": ds_id,
+                "name": name,
+                "bucket": s3_params.get("bucketName", ""),
+                "has_credentials": has_creds,
+            }
+        )
 
     # Get user info for template
     user_email = getattr(request.state, "user_email", "")
     is_admin = getattr(request.state, "is_admin", False)
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "connected": len(browsable_datastores) > 0,
-        "filespaces": list(state.filespaces.keys()) if state.filespaces else [],
-        "datastores": datastores_data,
-        "selected_filespace": state.selected_filespace,
-        "selected_datastore": state.selected_datastore,
-        "saved_token": state.token,
-        "saved_api_host": state.api_host,
-        "default_api_host": LL_HOST,
-        "browsable_datastores": browsable_datastores,
-        "user_email": user_email,
-        "is_admin": is_admin,
-    })
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "connected": len(browsable_datastores) > 0,
+            "filespaces": list(state.filespaces.keys()) if state.filespaces else [],
+            "datastores": datastores_data,
+            "selected_filespace": state.selected_filespace,
+            "selected_datastore": state.selected_datastore,
+            "saved_token": state.token,
+            "saved_api_host": state.api_host,
+            "default_api_host": LL_HOST,
+            "browsable_datastores": browsable_datastores,
+            "user_email": user_email,
+            "is_admin": is_admin,
+        },
+    )
 
 
 # ============== Settings API ==============
+
 
 @app.post("/api/load-filespaces", response_class=HTMLResponse)
 async def load_filespaces(
@@ -177,12 +187,15 @@ async def load_filespaces(
         user_id = getattr(request.state, "user_id", None)
         # Log connection error
         ActivityLogger.app_error(f"Failed to connect: {result}", user_id=user_id)
-        return templates.TemplateResponse("partials/filespace_select.html", {
-            "request": request,
-            "error": result,
-            "filespaces": [],
-            "datastores": [],
-        })
+        return templates.TemplateResponse(
+            "partials/filespace_select.html",
+            {
+                "request": request,
+                "error": result,
+                "filespaces": [],
+                "datastores": [],
+            },
+        )
 
     state.filespaces = {fs.get("name"): fs.get("id") for fs in result}
     state.token = token
@@ -197,7 +210,9 @@ async def load_filespaces(
     if state.filespaces:
         selected_filespace = list(state.filespaces.keys())[0]
         filespace_id = state.filespaces[selected_filespace]
-        ds_result = await ll_client.list_datastores(token, filespace_id, api_host=effective_host)
+        ds_result = await ll_client.list_datastores(
+            token, filespace_id, api_host=effective_host
+        )
 
         state.datastores = {}
         for ds in ds_result:
@@ -208,12 +223,14 @@ async def load_filespaces(
             s3_params = ds.get("s3StorageParams", {})
             # Check if user has credentials for this datastore
             has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
-            datastores_data.append({
-                "id": ds_id,
-                "name": ds_name,
-                "bucket": s3_params.get("bucketName", ""),
-                "has_credentials": has_creds,
-            })
+            datastores_data.append(
+                {
+                    "id": ds_id,
+                    "name": ds_name,
+                    "bucket": s3_params.get("bucketName", ""),
+                    "has_credentials": has_creds,
+                }
+            )
 
         state.selected_filespace = selected_filespace
         state.log(f"Loaded {len(ds_result)} datastores for {selected_filespace}")
@@ -225,12 +242,15 @@ async def load_filespaces(
             len(ds_result),
         )
 
-    return templates.TemplateResponse("partials/filespace_select.html", {
-        "request": request,
-        "filespaces": list(state.filespaces.keys()),
-        "selected": selected_filespace,
-        "datastores": datastores_data,
-    })
+    return templates.TemplateResponse(
+        "partials/filespace_select.html",
+        {
+            "request": request,
+            "filespaces": list(state.filespaces.keys()),
+            "selected": selected_filespace,
+            "datastores": datastores_data,
+        },
+    )
 
 
 @app.post("/api/load-datastores", response_class=HTMLResponse)
@@ -238,15 +258,20 @@ async def load_datastores(request: Request, filespace: str = Form(...)):
     """Load datastores for selected filespace - returns list view."""
     state = get_session_from_request(request)
     if filespace not in state.filespaces:
-        return templates.TemplateResponse("partials/datastore_list.html", {
-            "request": request,
-            "datastores": [],
-            "error": "Invalid filespace",
-        })
+        return templates.TemplateResponse(
+            "partials/datastore_list.html",
+            {
+                "request": request,
+                "datastores": [],
+                "error": "Invalid filespace",
+            },
+        )
 
     ll_client = LucidLinkClient(api_host=state.api_host)
     filespace_id = state.filespaces[filespace]
-    result = await ll_client.list_datastores(state.token, filespace_id, api_host=state.api_host)
+    result = await ll_client.list_datastores(
+        state.token, filespace_id, api_host=state.api_host
+    )
 
     # Store full DataStore info including bucket details
     state.datastores = {}
@@ -260,20 +285,25 @@ async def load_datastores(request: Request, filespace: str = Form(...)):
         s3_params = ds.get("s3StorageParams", {})
         # Check if user has credentials for this datastore
         has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
-        datastores_data.append({
-            "id": ds_id,
-            "name": ds_name,
-            "bucket": s3_params.get("bucketName", ""),
-            "has_credentials": has_creds,
-        })
+        datastores_data.append(
+            {
+                "id": ds_id,
+                "name": ds_name,
+                "bucket": s3_params.get("bucketName", ""),
+                "has_credentials": has_creds,
+            }
+        )
 
     state.selected_filespace = filespace
     state.log(f"Loaded {len(result)} datastores for {filespace}")
 
-    return templates.TemplateResponse("partials/datastore_list.html", {
-        "request": request,
-        "datastores": datastores_data,
-    })
+    return templates.TemplateResponse(
+        "partials/datastore_list.html",
+        {
+            "request": request,
+            "datastores": datastores_data,
+        },
+    )
 
 
 @app.post("/api/connect", response_class=HTMLResponse)
@@ -304,11 +334,14 @@ async def connect(
             state.save_connection(save_secrets=True)
             state.log(f"Connected to DataStore: {datastore}")
 
-            return templates.TemplateResponse("partials/browser.html", {
-                "request": request,
-                "datastores": state.get_browsable_datastores(),
-                "active_datastore_id": datastore_id,
-            })
+            return templates.TemplateResponse(
+                "partials/browser.html",
+                {
+                    "request": request,
+                    "datastores": state.get_browsable_datastores(),
+                    "active_datastore_id": datastore_id,
+                },
+            )
 
         # Need credentials - show modal
         # Extract bucket info from DataStore if available
@@ -317,28 +350,37 @@ async def connect(
         region = s3_params.get("region", "")
         endpoint = s3_params.get("endpoint", "")
 
-        return templates.TemplateResponse("partials/datastore_credentials_modal.html", {
-            "request": request,
-            "datastore_id": datastore_id,
-            "datastore_name": datastore,
-            "filespace_id": filespace_id,
-            "filespace_name": state.selected_filespace,
-            "bucket_name": bucket_name,
-            "region": region,
-            "endpoint": endpoint,
-        })
+        return templates.TemplateResponse(
+            "partials/datastore_credentials_modal.html",
+            {
+                "request": request,
+                "datastore_id": datastore_id,
+                "datastore_name": datastore,
+                "filespace_id": filespace_id,
+                "filespace_name": state.selected_filespace,
+                "bucket_name": bucket_name,
+                "region": region,
+                "endpoint": endpoint,
+            },
+        )
 
     except Exception as e:
         state.log(f"Connection error: {e}")
-        return templates.TemplateResponse("partials/connection_error.html", {
-            "request": request,
-            "error": str(e),
-        })
+        return templates.TemplateResponse(
+            "partials/connection_error.html",
+            {
+                "request": request,
+                "error": str(e),
+            },
+        )
 
 
 # ============== DataStore Credentials API ==============
 
-@app.get("/api/datastores/{datastore_id}/credentials-modal", response_class=HTMLResponse)
+
+@app.get(
+    "/api/datastores/{datastore_id}/credentials-modal", response_class=HTMLResponse
+)
 async def datastore_credentials_modal(request: Request, datastore_id: str):
     """Return the credentials prompt modal for a DataStore."""
     state = get_session_from_request(request)
@@ -352,23 +394,29 @@ async def datastore_credentials_modal(request: Request, datastore_id: str):
             break
 
     if not ds_info:
-        return templates.TemplateResponse("partials/connection_error.html", {
-            "request": request,
-            "error": f"DataStore {datastore_id} not found",
-        })
+        return templates.TemplateResponse(
+            "partials/connection_error.html",
+            {
+                "request": request,
+                "error": f"DataStore {datastore_id} not found",
+            },
+        )
 
     s3_params = ds_info.get("s3StorageParams", {})
 
-    return templates.TemplateResponse("partials/datastore_credentials_modal.html", {
-        "request": request,
-        "datastore_id": datastore_id,
-        "datastore_name": ds_name,
-        "filespace_id": state.filespaces.get(state.selected_filespace, ""),
-        "filespace_name": state.selected_filespace,
-        "bucket_name": s3_params.get("bucketName", ""),
-        "region": s3_params.get("region", ""),
-        "endpoint": s3_params.get("endpoint", ""),
-    })
+    return templates.TemplateResponse(
+        "partials/datastore_credentials_modal.html",
+        {
+            "request": request,
+            "datastore_id": datastore_id,
+            "datastore_name": ds_name,
+            "filespace_id": state.filespaces.get(state.selected_filespace, ""),
+            "filespace_name": state.selected_filespace,
+            "bucket_name": s3_params.get("bucketName", ""),
+            "region": s3_params.get("region", ""),
+            "endpoint": s3_params.get("endpoint", ""),
+        },
+    )
 
 
 @app.post("/api/datastores/{datastore_id}/credentials", response_class=HTMLResponse)
@@ -415,18 +463,24 @@ async def save_datastore_credentials(
         state.save_connection(save_secrets=True)
 
         # Return browser view
-        return templates.TemplateResponse("partials/browser.html", {
-            "request": request,
-            "datastores": state.get_browsable_datastores(),
-            "active_datastore_id": datastore_id,
-        })
+        return templates.TemplateResponse(
+            "partials/browser.html",
+            {
+                "request": request,
+                "datastores": state.get_browsable_datastores(),
+                "active_datastore_id": datastore_id,
+            },
+        )
 
     except Exception as e:
         state.log(f"Failed to save credentials: {e}")
-        return templates.TemplateResponse("partials/connection_error.html", {
-            "request": request,
-            "error": f"Failed to connect to S3: {e}",
-        })
+        return templates.TemplateResponse(
+            "partials/connection_error.html",
+            {
+                "request": request,
+                "error": f"Failed to connect to S3: {e}",
+            },
+        )
 
 
 @app.delete("/api/datastores/{datastore_id}/credentials", response_class=HTMLResponse)
@@ -438,6 +492,7 @@ async def delete_datastore_credentials(request: Request, datastore_id: str):
 
 
 # ============== DataStore Management API ==============
+
 
 @app.get("/api/datastores/{datastore_id}/info", response_class=HTMLResponse)
 async def datastore_info(request: Request, datastore_id: str):
@@ -453,37 +508,48 @@ async def datastore_info(request: Request, datastore_id: str):
             break
 
     if not filespace_id:
-        return templates.TemplateResponse("partials/datastore_info_modal.html", {
-            "request": request,
-            "error": "DataStore or filespace not found",
-        })
+        return templates.TemplateResponse(
+            "partials/datastore_info_modal.html",
+            {
+                "request": request,
+                "error": "DataStore or filespace not found",
+            },
+        )
 
     ll_client = LucidLinkClient(api_host=state.api_host)
-    result = await ll_client.get_datastore(state.token, filespace_id, datastore_id, api_host=state.api_host)
+    result = await ll_client.get_datastore(
+        state.token, filespace_id, datastore_id, api_host=state.api_host
+    )
 
     if isinstance(result, str):
         # Error occurred
-        return templates.TemplateResponse("partials/datastore_info_modal.html", {
-            "request": request,
-            "error": result,
-        })
+        return templates.TemplateResponse(
+            "partials/datastore_info_modal.html",
+            {
+                "request": request,
+                "error": result,
+            },
+        )
 
     # Extract display data
     s3_params = result.get("s3StorageParams", {})
 
-    return templates.TemplateResponse("partials/datastore_info_modal.html", {
-        "request": request,
-        "datastore": {
-            "name": result.get("name", ds_name),
-            "id": result.get("id", datastore_id),
-            "kind": result.get("kind", "Unknown"),
-            "bucket": s3_params.get("bucketName", ""),
-            "region": s3_params.get("region", ""),
-            "endpoint": s3_params.get("endpoint", ""),
-            "virtual_addressing": s3_params.get("useVirtualAddressing", False),
-            "url_expiration": s3_params.get("urlExpirationMinutes", ""),
+    return templates.TemplateResponse(
+        "partials/datastore_info_modal.html",
+        {
+            "request": request,
+            "datastore": {
+                "name": result.get("name", ds_name),
+                "id": result.get("id", datastore_id),
+                "kind": result.get("kind", "Unknown"),
+                "bucket": s3_params.get("bucketName", ""),
+                "region": s3_params.get("region", ""),
+                "endpoint": s3_params.get("endpoint", ""),
+                "virtual_addressing": s3_params.get("useVirtualAddressing", False),
+                "url_expiration": s3_params.get("urlExpirationMinutes", ""),
+            },
         },
-    })
+    )
 
 
 @app.delete("/api/datastores/{datastore_id}", response_class=HTMLResponse)
@@ -500,14 +566,19 @@ async def delete_datastore(request: Request, datastore_id: str):
             break
 
     if not filespace_id:
-        return templates.TemplateResponse("partials/datastore_list.html", {
-            "request": request,
-            "datastores": [],
-            "error": "DataStore or filespace not found",
-        })
+        return templates.TemplateResponse(
+            "partials/datastore_list.html",
+            {
+                "request": request,
+                "datastores": [],
+                "error": "DataStore or filespace not found",
+            },
+        )
 
     ll_client = LucidLinkClient(api_host=state.api_host)
-    result = await ll_client.delete_datastore(state.token, filespace_id, datastore_id, api_host=state.api_host)
+    result = await ll_client.delete_datastore(
+        state.token, filespace_id, datastore_id, api_host=state.api_host
+    )
 
     if result != "SUCCESS":
         state.log(f"Error deleting DataStore: {result}")
@@ -518,17 +589,22 @@ async def delete_datastore(request: Request, datastore_id: str):
             s3_params = ds.get("s3StorageParams", {})
             ds_id = ds.get("id")
             has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
-            datastores_data.append({
-                "id": ds_id,
-                "name": name,
-                "bucket": s3_params.get("bucketName", ""),
-                "has_credentials": has_creds,
-            })
-        return templates.TemplateResponse("partials/datastore_list.html", {
-            "request": request,
-            "datastores": datastores_data,
-            "error": result,
-        })
+            datastores_data.append(
+                {
+                    "id": ds_id,
+                    "name": name,
+                    "bucket": s3_params.get("bucketName", ""),
+                    "has_credentials": has_creds,
+                }
+            )
+        return templates.TemplateResponse(
+            "partials/datastore_list.html",
+            {
+                "request": request,
+                "datastores": datastores_data,
+                "error": result,
+            },
+        )
 
     state.log(f"Deleted DataStore: {ds_name}")
 
@@ -549,29 +625,38 @@ async def delete_datastore(request: Request, datastore_id: str):
         s3_params = ds.get("s3StorageParams", {})
         ds_id = ds.get("id")
         has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
-        datastores_data.append({
-            "id": ds_id,
-            "name": name,
-            "bucket": s3_params.get("bucketName", ""),
-            "has_credentials": has_creds,
-        })
+        datastores_data.append(
+            {
+                "id": ds_id,
+                "name": name,
+                "bucket": s3_params.get("bucketName", ""),
+                "has_credentials": has_creds,
+            }
+        )
 
-    return templates.TemplateResponse("partials/datastore_list.html", {
-        "request": request,
-        "datastores": datastores_data,
-        "success": f"DataStore '{ds_name}' deleted",
-    })
+    return templates.TemplateResponse(
+        "partials/datastore_list.html",
+        {
+            "request": request,
+            "datastores": datastores_data,
+            "success": f"DataStore '{ds_name}' deleted",
+        },
+    )
 
 
 # ============== Create DataStore ==============
+
 
 @app.get("/api/create-datastore-modal", response_class=HTMLResponse)
 async def create_datastore_modal(request: Request):
     """Return the create datastore modal HTML."""
     _ = get_session_from_request(request)  # Verify authenticated
-    return templates.TemplateResponse("partials/create_datastore_modal.html", {
-        "request": request,
-    })
+    return templates.TemplateResponse(
+        "partials/create_datastore_modal.html",
+        {
+            "request": request,
+        },
+    )
 
 
 @app.post("/api/create-datastore", response_class=HTMLResponse)
@@ -602,16 +687,22 @@ async def create_datastore(
     except ValueError as e:
         # head_bucket raises ValueError for access/not found errors
         state.log(f"S3 validation failed: {e}")
-        return templates.TemplateResponse("partials/create_datastore_error.html", {
-            "request": request,
-            "error": f"S3 access failed: {e}",
-        })
+        return templates.TemplateResponse(
+            "partials/create_datastore_error.html",
+            {
+                "request": request,
+                "error": f"S3 access failed: {e}",
+            },
+        )
     except Exception as e:
         state.log(f"S3 validation error: {e}")
-        return templates.TemplateResponse("partials/create_datastore_error.html", {
-            "request": request,
-            "error": f"Failed to validate S3 access: {e}",
-        })
+        return templates.TemplateResponse(
+            "partials/create_datastore_error.html",
+            {
+                "request": request,
+                "error": f"Failed to validate S3 access: {e}",
+            },
+        )
 
     ll_client = LucidLinkClient(api_host=state.api_host)
     filespace_id = state.filespaces[state.selected_filespace]
@@ -637,7 +728,9 @@ async def create_datastore(
         state.log(f"DataStore '{name}' created")
 
         # Reload datastores to get the new one's ID
-        datastores = await ll_client.list_datastores(state.token, filespace_id, api_host=state.api_host)
+        datastores = await ll_client.list_datastores(
+            state.token, filespace_id, api_host=state.api_host
+        )
         state.datastores = {}
         datastores_data = []
         new_datastore_id = None
@@ -650,13 +743,17 @@ async def create_datastore(
             s3_params = ds.get("s3StorageParams", {})
             # For newly created datastore, credentials will be saved below
             # For others, check existing credentials
-            has_creds = (ds_name == name) or (db.get_datastore_credentials(ds_id, user_id=user_id) is not None)
-            datastores_data.append({
-                "id": ds_id,
-                "name": ds_name,
-                "bucket": s3_params.get("bucketName", ""),
-                "has_credentials": has_creds,
-            })
+            has_creds = (ds_name == name) or (
+                db.get_datastore_credentials(ds_id, user_id=user_id) is not None
+            )
+            datastores_data.append(
+                {
+                    "id": ds_id,
+                    "name": ds_name,
+                    "bucket": s3_params.get("bucketName", ""),
+                    "has_credentials": has_creds,
+                }
+            )
             if ds_name == name:
                 new_datastore_id = ds_id
 
@@ -680,20 +777,27 @@ async def create_datastore(
         )
 
         # Return success with out-of-band swap to close modal and update list
-        return templates.TemplateResponse("partials/datastore_create_success.html", {
-            "request": request,
-            "datastores": datastores_data,
-            "success": f"DataStore '{name}' created successfully",
-        })
+        return templates.TemplateResponse(
+            "partials/datastore_create_success.html",
+            {
+                "request": request,
+                "datastores": datastores_data,
+                "success": f"DataStore '{name}' created successfully",
+            },
+        )
     else:
         state.log(f"Error creating datastore: {result}")
-        return templates.TemplateResponse("partials/create_datastore_error.html", {
-            "request": request,
-            "error": result,
-        })
+        return templates.TemplateResponse(
+            "partials/create_datastore_error.html",
+            {
+                "request": request,
+                "error": result,
+            },
+        )
 
 
 # ============== S3 Browser ==============
+
 
 @app.get("/api/browse/{datastore_id}", response_class=HTMLResponse)
 async def browse_datastore(
@@ -709,17 +813,23 @@ async def browse_datastore(
     state = get_session_from_request(request)
     cred = state.get_datastore_by_id(datastore_id)
     if not cred:
-        return templates.TemplateResponse("partials/connection_error.html", {
-            "request": request,
-            "error": f"DataStore credentials not found. Please add credentials in Settings.",
-        })
+        return templates.TemplateResponse(
+            "partials/connection_error.html",
+            {
+                "request": request,
+                "error": "DataStore credentials not found. Please add credentials in Settings.",
+            },
+        )
 
     s3_service = state.get_s3_service_for_datastore(datastore_id)
     if not s3_service:
-        return templates.TemplateResponse("partials/connection_error.html", {
-            "request": request,
-            "error": "S3 service not initialized for this DataStore",
-        })
+        return templates.TemplateResponse(
+            "partials/connection_error.html",
+            {
+                "request": request,
+                "error": "S3 service not initialized for this DataStore",
+            },
+        )
 
     try:
         bucket = cred.get("bucket_name")
@@ -734,25 +844,31 @@ async def browse_datastore(
         end = start + page_size
         page_items = result.items[start:end]
 
-        return templates.TemplateResponse("partials/datastore_browser.html", {
-            "request": request,
-            "datastore_id": datastore_id,
-            "bucket": bucket,
-            "prefix": prefix,
-            "items": page_items,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": total_pages,
-            "total_items": total_items,
-            "is_truncated": result.is_truncated,
-        })
+        return templates.TemplateResponse(
+            "partials/datastore_browser.html",
+            {
+                "request": request,
+                "datastore_id": datastore_id,
+                "bucket": bucket,
+                "prefix": prefix,
+                "items": page_items,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_items": total_items,
+                "is_truncated": result.is_truncated,
+            },
+        )
 
     except Exception as e:
         state.log(f"Browse error: {e}")
-        return templates.TemplateResponse("partials/connection_error.html", {
-            "request": request,
-            "error": str(e),
-        })
+        return templates.TemplateResponse(
+            "partials/connection_error.html",
+            {
+                "request": request,
+                "error": str(e),
+            },
+        )
 
 
 @app.get("/api/browse/{datastore_id}/back", response_class=HTMLResponse)
@@ -772,10 +888,13 @@ async def browse_datastore_back(
         if new_prefix:
             new_prefix += "/"
 
-    return await browse_datastore(request, datastore_id, new_prefix, page=1, page_size=page_size)
+    return await browse_datastore(
+        request, datastore_id, new_prefix, page=1, page_size=page_size
+    )
 
 
 # ============== Import Operations ==============
+
 
 @app.post("/api/import/file")
 async def import_file(
@@ -792,7 +911,7 @@ async def import_file(
         # Get DataStore credentials
         cred = state.get_datastore_by_id(datastore_id)
         if not cred:
-            raise ValueError(f"DataStore credentials not found")
+            raise ValueError("DataStore credentials not found")
 
         bucket_name = cred.get("bucket_name", "")
         filespace_id = cred.get("filespace_id", "")
@@ -825,7 +944,9 @@ async def import_file(
             else:
                 state.log(f"Error ({code}): {key.split('/')[-1]} - {error_msg}")
         else:
-            state.log(f"Failed to create folder structure for: {key} - {structure_error}")
+            state.log(
+                f"Failed to create folder structure for: {key} - {structure_error}"
+            )
 
         await ll_client.close()
         state.progress = 1.0
@@ -848,25 +969,34 @@ async def import_folder(
     # Get DataStore credentials
     cred = state.get_datastore_by_id(datastore_id)
     if not cred:
-        return templates.TemplateResponse("partials/job_error.html", {
-            "request": request,
-            "error": f"DataStore credentials not found",
-        })
+        return templates.TemplateResponse(
+            "partials/job_error.html",
+            {
+                "request": request,
+                "error": "DataStore credentials not found",
+            },
+        )
 
     filespace_id = cred.get("filespace_id", "")
     bucket = cred.get("bucket_name", "")
 
     if not filespace_id or not datastore_id:
-        return templates.TemplateResponse("partials/job_error.html", {
-            "request": request,
-            "error": "Missing filespace or datastore configuration",
-        })
+        return templates.TemplateResponse(
+            "partials/job_error.html",
+            {
+                "request": request,
+                "error": "Missing filespace or datastore configuration",
+            },
+        )
 
     if not bucket:
-        return templates.TemplateResponse("partials/job_error.html", {
-            "request": request,
-            "error": "No bucket specified",
-        })
+        return templates.TemplateResponse(
+            "partials/job_error.html",
+            {
+                "request": request,
+                "error": "No bucket specified",
+            },
+        )
 
     user_id = getattr(request.state, "user_id", None)
     job_id = await job_queue.add_job(
@@ -881,14 +1011,18 @@ async def import_folder(
     ActivityLogger.job_queued(user_id, job_id, prefix or "/")
 
     # Return updated job queue partial
-    return templates.TemplateResponse("partials/job_added.html", {
-        "request": request,
-        "job_id": job_id,
-        "prefix": prefix,
-    })
+    return templates.TemplateResponse(
+        "partials/job_added.html",
+        {
+            "request": request,
+            "job_id": job_id,
+            "prefix": prefix,
+        },
+    )
 
 
 # ============== Job Queue API ==============
+
 
 @app.get("/api/jobs", response_class=HTMLResponse)
 async def list_jobs(request: Request):
@@ -898,11 +1032,14 @@ async def list_jobs(request: Request):
     jobs = await job_queue.get_jobs(user_id=user_id)
     status = await job_queue.get_queue_status(user_id=user_id)
 
-    return templates.TemplateResponse("partials/job_queue.html", {
-        "request": request,
-        "jobs": jobs,
-        "queue_status": status,
-    })
+    return templates.TemplateResponse(
+        "partials/job_queue.html",
+        {
+            "request": request,
+            "jobs": jobs,
+            "queue_status": status,
+        },
+    )
 
 
 @app.post("/api/jobs/{job_id}/cancel", response_class=HTMLResponse)
@@ -914,11 +1051,14 @@ async def cancel_job(request: Request, job_id: int):
     jobs = await job_queue.get_jobs(user_id=user_id)
     status = await job_queue.get_queue_status(user_id=user_id)
 
-    return templates.TemplateResponse("partials/job_queue.html", {
-        "request": request,
-        "jobs": jobs,
-        "queue_status": status,
-    })
+    return templates.TemplateResponse(
+        "partials/job_queue.html",
+        {
+            "request": request,
+            "jobs": jobs,
+            "queue_status": status,
+        },
+    )
 
 
 @app.delete("/api/jobs/{job_id}", response_class=HTMLResponse)
@@ -930,11 +1070,14 @@ async def delete_job(request: Request, job_id: int):
     jobs = await job_queue.get_jobs(user_id=user_id)
     status = await job_queue.get_queue_status(user_id=user_id)
 
-    return templates.TemplateResponse("partials/job_queue.html", {
-        "request": request,
-        "jobs": jobs,
-        "queue_status": status,
-    })
+    return templates.TemplateResponse(
+        "partials/job_queue.html",
+        {
+            "request": request,
+            "jobs": jobs,
+            "queue_status": status,
+        },
+    )
 
 
 @app.post("/api/jobs/clear", response_class=HTMLResponse)
@@ -946,14 +1089,18 @@ async def clear_jobs(request: Request):
     jobs = await job_queue.get_jobs(user_id=user_id)
     status = await job_queue.get_queue_status(user_id=user_id)
 
-    return templates.TemplateResponse("partials/job_queue.html", {
-        "request": request,
-        "jobs": jobs,
-        "queue_status": status,
-    })
+    return templates.TemplateResponse(
+        "partials/job_queue.html",
+        {
+            "request": request,
+            "jobs": jobs,
+            "queue_status": status,
+        },
+    )
 
 
 # ============== Server-Sent Events ==============
+
 
 @app.get("/api/logs/stream")
 async def logs_stream(request: Request):
@@ -980,7 +1127,7 @@ async def logs_stream(request: Request):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-        }
+        },
     )
 
 
@@ -1007,7 +1154,7 @@ async def progress_stream(request: Request):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-        }
+        },
     )
 
 
@@ -1020,6 +1167,7 @@ async def clear_logs(request: Request):
 
 
 # ============== Tabs ==============
+
 
 @app.get("/api/tab/settings", response_class=HTMLResponse)
 async def tab_settings(request: Request):
@@ -1035,24 +1183,29 @@ async def tab_settings(request: Request):
         ds_id = ds.get("id")
         # Check if user has credentials for this datastore
         has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
-        datastores_data.append({
-            "id": ds_id,
-            "name": name,
-            "bucket": s3_params.get("bucketName", ""),
-            "has_credentials": has_creds,
-        })
+        datastores_data.append(
+            {
+                "id": ds_id,
+                "name": name,
+                "bucket": s3_params.get("bucketName", ""),
+                "has_credentials": has_creds,
+            }
+        )
 
-    return templates.TemplateResponse("partials/settings.html", {
-        "request": request,
-        "filespaces": list(state.filespaces.keys()) if state.filespaces else [],
-        "datastores": datastores_data,
-        "selected_filespace": state.selected_filespace,
-        "selected_datastore": state.selected_datastore,
-        "saved_token": state.token,
-        "saved_api_host": state.api_host,
-        "default_api_host": LL_HOST,
-        "browsable_datastores": browsable_datastores,
-    })
+    return templates.TemplateResponse(
+        "partials/settings.html",
+        {
+            "request": request,
+            "filespaces": list(state.filespaces.keys()) if state.filespaces else [],
+            "datastores": datastores_data,
+            "selected_filespace": state.selected_filespace,
+            "selected_datastore": state.selected_datastore,
+            "saved_token": state.token,
+            "saved_api_host": state.api_host,
+            "default_api_host": LL_HOST,
+            "browsable_datastores": browsable_datastores,
+        },
+    )
 
 
 @app.get("/api/tab/browser", response_class=HTMLResponse)
@@ -1062,22 +1215,29 @@ async def tab_browser(request: Request):
     browsable_datastores = state.get_browsable_datastores()
 
     if browsable_datastores:
-        return templates.TemplateResponse("partials/browser.html", {
-            "request": request,
-            "datastores": browsable_datastores,
-            "active_datastore_id": browsable_datastores[0]["datastore_id"] if browsable_datastores else None,
-        })
+        return templates.TemplateResponse(
+            "partials/browser.html",
+            {
+                "request": request,
+                "datastores": browsable_datastores,
+                "active_datastore_id": browsable_datastores[0]["datastore_id"]
+                if browsable_datastores
+                else None,
+            },
+        )
 
-    return templates.TemplateResponse("partials/not_connected.html", {
-        "request": request,
-    })
+    return templates.TemplateResponse(
+        "partials/not_connected.html",
+        {
+            "request": request,
+        },
+    )
 
 
 @app.get("/api/tab/logs", response_class=HTMLResponse)
 async def tab_logs(request: Request, subtab: str = "app"):
     """Return logs tab content with sub-tabs."""
     _ = get_session_from_request(request)  # Verify authenticated
-    user_id = getattr(request.state, "user_id", None)
     is_admin = getattr(request.state, "is_admin", False)
 
     # Validate subtab
@@ -1087,11 +1247,14 @@ async def tab_logs(request: Request, subtab: str = "app"):
     if subtab not in valid_subtabs:
         subtab = "app"
 
-    return templates.TemplateResponse("partials/logs_tab.html", {
-        "request": request,
-        "active_subtab": subtab,
-        "is_admin": is_admin,
-    })
+    return templates.TemplateResponse(
+        "partials/logs_tab.html",
+        {
+            "request": request,
+            "active_subtab": subtab,
+            "is_admin": is_admin,
+        },
+    )
 
 
 @app.get("/api/logs/app", response_class=HTMLResponse)
@@ -1108,14 +1271,17 @@ async def logs_app(request: Request, limit: int = 100, offset: int = 0):
     )
     total = ActivityLogger.count_logs(category=ActivityLogger.APP, user_id=user_id)
 
-    return templates.TemplateResponse("partials/logs_app.html", {
-        "request": request,
-        "logs": logs,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "category": "app",
-    })
+    return templates.TemplateResponse(
+        "partials/logs_app.html",
+        {
+            "request": request,
+            "logs": logs,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "category": "app",
+        },
+    )
 
 
 @app.get("/api/logs/jobs", response_class=HTMLResponse)
@@ -1132,14 +1298,17 @@ async def logs_jobs(request: Request, limit: int = 100, offset: int = 0):
     )
     total = ActivityLogger.count_logs(category=ActivityLogger.JOB, user_id=user_id)
 
-    return templates.TemplateResponse("partials/logs_jobs.html", {
-        "request": request,
-        "logs": logs,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "category": "jobs",
-    })
+    return templates.TemplateResponse(
+        "partials/logs_jobs.html",
+        {
+            "request": request,
+            "logs": logs,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "category": "jobs",
+        },
+    )
 
 
 @app.get("/api/logs/sqs", response_class=HTMLResponse)
@@ -1156,14 +1325,17 @@ async def logs_sqs(request: Request, limit: int = 100, offset: int = 0):
     )
     total = ActivityLogger.count_logs(category=ActivityLogger.SQS, user_id=user_id)
 
-    return templates.TemplateResponse("partials/logs_sqs.html", {
-        "request": request,
-        "logs": logs,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "category": "sqs",
-    })
+    return templates.TemplateResponse(
+        "partials/logs_sqs.html",
+        {
+            "request": request,
+            "logs": logs,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "category": "sqs",
+        },
+    )
 
 
 @app.get("/api/logs/admin", response_class=HTMLResponse)
@@ -1182,16 +1354,21 @@ async def logs_admin(request: Request, limit: int = 100, offset: int = 0):
         offset=offset,
         include_all_users=True,
     )
-    total = ActivityLogger.count_logs(category=ActivityLogger.ADMIN, include_all_users=True)
+    total = ActivityLogger.count_logs(
+        category=ActivityLogger.ADMIN, include_all_users=True
+    )
 
-    return templates.TemplateResponse("partials/logs_admin.html", {
-        "request": request,
-        "logs": logs,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "category": "admin",
-    })
+    return templates.TemplateResponse(
+        "partials/logs_admin.html",
+        {
+            "request": request,
+            "logs": logs,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "category": "admin",
+        },
+    )
 
 
 @app.post("/api/logs/clear/{category}", response_class=HTMLResponse)
@@ -1229,24 +1406,30 @@ async def clear_logs_category(request: Request, category: str):
         "admin": "partials/logs_admin.html",
     }
 
-    return templates.TemplateResponse(template_map[category], {
-        "request": request,
-        "logs": [],
-        "total": 0,
-        "limit": 100,
-        "offset": 0,
-        "category": category,
-    })
+    return templates.TemplateResponse(
+        template_map[category],
+        {
+            "request": request,
+            "logs": [],
+            "total": 0,
+            "limit": 100,
+            "offset": 0,
+            "category": category,
+        },
+    )
 
 
 @app.get("/api/tab/help", response_class=HTMLResponse)
 async def tab_help(request: Request):
     """Return help tab content."""
     state = get_session_from_request(request)
-    return templates.TemplateResponse("partials/help.html", {
-        "request": request,
-        "api_host": state.api_host,
-    })
+    return templates.TemplateResponse(
+        "partials/help.html",
+        {
+            "request": request,
+            "api_host": state.api_host,
+        },
+    )
 
 
 @app.get("/api/tab/account", response_class=HTMLResponse)
@@ -1261,21 +1444,24 @@ async def tab_account(request: Request):
     # Get all users for admin view
     users = db.list_users() if is_admin else []
 
-    return templates.TemplateResponse("partials/account_tab.html", {
-        "request": request,
-        "current_user": current_user,
-        "users": users,
-        "is_admin": is_admin,
-    })
+    return templates.TemplateResponse(
+        "partials/account_tab.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "users": users,
+            "is_admin": is_admin,
+        },
+    )
 
 
 # ============== SQS Event Stream API ==============
+
 
 @app.get("/api/tab/sqs", response_class=HTMLResponse)
 async def tab_sqs(request: Request):
     """Return SQS tab content."""
     state = get_session_from_request(request)
-    from services import secrets as sec
 
     user_id = getattr(request.state, "user_id", None)
     sqs_credentials = db.get_sqs_credentials(user_id=user_id)
@@ -1285,20 +1471,25 @@ async def tab_sqs(request: Request):
 
     # Get event count for each queue and add datastore names
     for queue in sqs_queues:
-        queue["events_today"] = db.get_sqs_event_count_today(queue["id"], user_id=user_id)
+        queue["events_today"] = db.get_sqs_event_count_today(
+            queue["id"], user_id=user_id
+        )
         # Look up datastore name
         ds_cred = db.get_datastore_credentials(queue["datastore_id"], user_id=user_id)
         if ds_cred:
             queue["datastore_name"] = ds_cred.get("datastore_name", "")
             queue["filespace_name"] = ds_cred.get("filespace_name", "")
 
-    return templates.TemplateResponse("partials/sqs_tab.html", {
-        "request": request,
-        "sqs_credentials": sqs_credentials,
-        "sqs_queues": sqs_queues,
-        "sqs_events": sqs_events,
-        "browsable_datastores": browsable_datastores,
-    })
+    return templates.TemplateResponse(
+        "partials/sqs_tab.html",
+        {
+            "request": request,
+            "sqs_credentials": sqs_credentials,
+            "sqs_queues": sqs_queues,
+            "sqs_events": sqs_events,
+            "browsable_datastores": browsable_datastores,
+        },
+    )
 
 
 @app.post("/api/sqs/credentials", response_class=HTMLResponse)
@@ -1341,27 +1532,37 @@ async def save_sqs_credentials(
         browsable_datastores = state.get_browsable_datastores()
 
         for queue in sqs_queues:
-            queue["events_today"] = db.get_sqs_event_count_today(queue["id"], user_id=user_id)
-            ds_cred = db.get_datastore_credentials(queue["datastore_id"], user_id=user_id)
+            queue["events_today"] = db.get_sqs_event_count_today(
+                queue["id"], user_id=user_id
+            )
+            ds_cred = db.get_datastore_credentials(
+                queue["datastore_id"], user_id=user_id
+            )
             if ds_cred:
                 queue["datastore_name"] = ds_cred.get("datastore_name", "")
 
-        return templates.TemplateResponse("partials/sqs_queue_list.html", {
-            "request": request,
-            "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
-            "sqs_queues": sqs_queues,
-            "browsable_datastores": browsable_datastores,
-        })
+        return templates.TemplateResponse(
+            "partials/sqs_queue_list.html",
+            {
+                "request": request,
+                "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+                "sqs_queues": sqs_queues,
+                "browsable_datastores": browsable_datastores,
+            },
+        )
 
     except Exception as e:
         state.log(f"Failed to save SQS credentials: {e}")
-        return templates.TemplateResponse("partials/sqs_queue_list.html", {
-            "request": request,
-            "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
-            "sqs_queues": [],
-            "browsable_datastores": state.get_browsable_datastores(),
-            "error": str(e),
-        })
+        return templates.TemplateResponse(
+            "partials/sqs_queue_list.html",
+            {
+                "request": request,
+                "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+                "sqs_queues": [],
+                "browsable_datastores": state.get_browsable_datastores(),
+                "error": str(e),
+            },
+        )
 
 
 @app.delete("/api/sqs/credentials", response_class=HTMLResponse)
@@ -1391,9 +1592,12 @@ async def delete_sqs_credentials(request: Request):
 @app.get("/api/sqs/iam-policy", response_class=HTMLResponse)
 async def sqs_iam_policy_modal(request: Request):
     """Show modal with example IAM policy for SQS."""
-    return templates.TemplateResponse("partials/sqs_iam_policy_modal.html", {
-        "request": request,
-    })
+    return templates.TemplateResponse(
+        "partials/sqs_iam_policy_modal.html",
+        {
+            "request": request,
+        },
+    )
 
 
 @app.get("/api/sqs/queues/add-modal", response_class=HTMLResponse)
@@ -1402,10 +1606,13 @@ async def sqs_add_queue_modal(request: Request):
     state = get_session_from_request(request)
     browsable_datastores = state.get_browsable_datastores()
 
-    return templates.TemplateResponse("partials/sqs_queue_modal.html", {
-        "request": request,
-        "browsable_datastores": browsable_datastores,
-    })
+    return templates.TemplateResponse(
+        "partials/sqs_queue_modal.html",
+        {
+            "request": request,
+            "browsable_datastores": browsable_datastores,
+        },
+    )
 
 
 @app.get("/api/sqs/queues/discover", response_class=HTMLResponse)
@@ -1434,19 +1641,21 @@ async def discover_sqs_queues(request: Request, queue_region: str = "us-east-1")
         queues = sqs.list_queues()
 
         if not queues:
-            return HTMLResponse(f'<option value="">No queues found in {queue_region}</option>')
+            return HTMLResponse(
+                f'<option value="">No queues found in {queue_region}</option>'
+            )
 
         # Build HTML options
         options = ['<option value="">Select a queue...</option>']
         for q in queues:
             options.append(f'<option value="{q["url"]}">{q["name"]}</option>')
 
-        return HTMLResponse('\n'.join(options))
+        return HTMLResponse("\n".join(options))
 
     except SQSError as e:
         return HTMLResponse(f'<option value="">Error: {str(e)}</option>')
-    except Exception as e:
-        return HTMLResponse(f'<option value="">Error discovering queues</option>')
+    except Exception:
+        return HTMLResponse('<option value="">Error discovering queues</option>')
 
 
 @app.post("/api/sqs/queues", response_class=HTMLResponse)
@@ -1485,7 +1694,9 @@ async def add_sqs_queue(
         # Get DataStore credentials to validate and get bucket name
         ds_cred = db.get_datastore_credentials(datastore_id, user_id=user_id)
         if not ds_cred:
-            raise ValueError("DataStore credentials not found. Please add credentials in Settings first.")
+            raise ValueError(
+                "DataStore credentials not found. Please add credentials in Settings first."
+            )
 
         filespace_id = ds_cred.get("filespace_id", "")
         bucket_name = ds_cred.get("bucket_name", "")
@@ -1503,8 +1714,11 @@ async def add_sqs_queue(
 
             # Validate queue name
             import re
-            if not re.match(r'^[a-zA-Z0-9_-]+$', queue_name):
-                raise ValueError("Queue name can only contain alphanumeric characters, hyphens, and underscores")
+
+            if not re.match(r"^[a-zA-Z0-9_-]+$", queue_name):
+                raise ValueError(
+                    "Queue name can only contain alphanumeric characters, hyphens, and underscores"
+                )
 
             queue_info = sqs.create_queue(queue_name)
             state.log(f"Created SQS queue '{queue_name}' in AWS ({region})")
@@ -1516,7 +1730,11 @@ async def add_sqs_queue(
                 state.log(f"Configured queue policy for S3 bucket '{bucket_name}'")
 
                 # 2. Configure S3 bucket to send notifications to the queue
-                from services.sqs_service import S3NotificationService, S3NotificationError
+                from services.sqs_service import (
+                    S3NotificationService,
+                    S3NotificationError,
+                )
+
                 s3_notif = S3NotificationService(access_key, secret_key, region)
                 try:
                     s3_notif.add_sqs_notification(
@@ -1524,7 +1742,9 @@ async def add_sqs_queue(
                         queue_arn=queue_info["arn"],
                         notification_id=f"LucidLink-{queue_name}",
                     )
-                    state.log(f"Configured S3 bucket '{bucket_name}' to send events to queue")
+                    state.log(
+                        f"Configured S3 bucket '{bucket_name}' to send events to queue"
+                    )
                 except S3NotificationError as e:
                     # Queue created but S3 notification failed - still save the queue
                     state.log(f"Warning: Could not configure S3 notifications: {e}")
@@ -1542,7 +1762,10 @@ async def add_sqs_queue(
             # Extract region from queue URL (format: https://sqs.{region}.amazonaws.com/...)
             # This handles both browse (where queue_region is set) and paste (where we need to extract)
             import re
-            region_match = re.search(r'sqs\.([a-z0-9-]+)\.amazonaws\.com', normalized_url)
+
+            region_match = re.search(
+                r"sqs\.([a-z0-9-]+)\.amazonaws\.com", normalized_url
+            )
             if region_match:
                 region = region_match.group(1)
             else:
@@ -1577,31 +1800,42 @@ async def add_sqs_queue(
         # Return updated queue list
         sqs_queues = db.list_sqs_queues(user_id=user_id)
         for queue in sqs_queues:
-            queue["events_today"] = db.get_sqs_event_count_today(queue["id"], user_id=user_id)
+            queue["events_today"] = db.get_sqs_event_count_today(
+                queue["id"], user_id=user_id
+            )
             cred = db.get_datastore_credentials(queue["datastore_id"], user_id=user_id)
             if cred:
                 queue["datastore_name"] = cred.get("datastore_name", "")
 
-        return templates.TemplateResponse("partials/sqs_queue_list.html", {
-            "request": request,
-            "sqs_credentials": sqs_creds,
-            "sqs_queues": sqs_queues,
-            "browsable_datastores": browsable_datastores,
-            "success": f"Queue '{queue_info['name']}' {action} successfully",
-        })
+        return templates.TemplateResponse(
+            "partials/sqs_queue_list.html",
+            {
+                "request": request,
+                "sqs_credentials": sqs_creds,
+                "sqs_queues": sqs_queues,
+                "browsable_datastores": browsable_datastores,
+                "success": f"Queue '{queue_info['name']}' {action} successfully",
+            },
+        )
 
     except SQSError as e:
-        return templates.TemplateResponse("partials/sqs_queue_modal.html", {
-            "request": request,
-            "browsable_datastores": browsable_datastores,
-            "error": f"SQS error: {e}",
-        })
+        return templates.TemplateResponse(
+            "partials/sqs_queue_modal.html",
+            {
+                "request": request,
+                "browsable_datastores": browsable_datastores,
+                "error": f"SQS error: {e}",
+            },
+        )
     except Exception as e:
-        return templates.TemplateResponse("partials/sqs_queue_modal.html", {
-            "request": request,
-            "browsable_datastores": browsable_datastores,
-            "error": str(e),
-        })
+        return templates.TemplateResponse(
+            "partials/sqs_queue_modal.html",
+            {
+                "request": request,
+                "browsable_datastores": browsable_datastores,
+                "error": str(e),
+            },
+        )
 
 
 @app.delete("/api/sqs/queues/{queue_id}", response_class=HTMLResponse)
@@ -1609,7 +1843,12 @@ async def delete_sqs_queue(request: Request, queue_id: str):
     """Delete an SQS queue configuration and clean up AWS resources."""
     state = get_session_from_request(request)
     from services import secrets as sec
-    from services.sqs_service import SQSService, S3NotificationService, SQSError, S3NotificationError
+    from services.sqs_service import (
+        SQSService,
+        S3NotificationService,
+        SQSError,
+        S3NotificationError,
+    )
 
     user_id = getattr(request.state, "user_id", None)
 
@@ -1623,13 +1862,16 @@ async def delete_sqs_queue(request: Request, queue_id: str):
             cred = db.get_datastore_credentials(q["datastore_id"], user_id=user_id)
             if cred:
                 q["datastore_name"] = cred.get("datastore_name", "")
-        return templates.TemplateResponse("partials/sqs_queue_list.html", {
-            "request": request,
-            "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
-            "sqs_queues": sqs_queues,
-            "browsable_datastores": browsable_datastores,
-            "error": "Queue not found",
-        })
+        return templates.TemplateResponse(
+            "partials/sqs_queue_list.html",
+            {
+                "request": request,
+                "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+                "sqs_queues": sqs_queues,
+                "browsable_datastores": browsable_datastores,
+                "error": "Queue not found",
+            },
+        )
 
     queue_name = queue.get("name", queue_id)
     queue_url = queue.get("queue_url")
@@ -1654,9 +1896,13 @@ async def delete_sqs_queue(request: Request, queue_id: str):
                     bucket_name = ds_cred.get("bucket_name")
                     if bucket_name:
                         try:
-                            s3_notif = S3NotificationService(access_key, secret_key, queue_region)
+                            s3_notif = S3NotificationService(
+                                access_key, secret_key, queue_region
+                            )
                             s3_notif.remove_sqs_notification(bucket_name, queue_arn)
-                            state.log(f"Removed S3 notification from bucket '{bucket_name}'")
+                            state.log(
+                                f"Removed S3 notification from bucket '{bucket_name}'"
+                            )
                         except S3NotificationError as e:
                             cleanup_errors.append(f"S3 notification: {e}")
 
@@ -1672,7 +1918,9 @@ async def delete_sqs_queue(request: Request, queue_id: str):
     db.delete_sqs_queue(queue_id, user_id=user_id)
 
     if cleanup_errors:
-        state.log(f"Queue '{queue_name}' removed (some AWS cleanup failed: {'; '.join(cleanup_errors)})")
+        state.log(
+            f"Queue '{queue_name}' removed (some AWS cleanup failed: {'; '.join(cleanup_errors)})"
+        )
     else:
         state.log(f"Queue '{queue_name}' fully deleted")
 
@@ -1689,13 +1937,16 @@ async def delete_sqs_queue(request: Request, queue_id: str):
         if cred:
             q["datastore_name"] = cred.get("datastore_name", "")
 
-    return templates.TemplateResponse("partials/sqs_queue_list.html", {
-        "request": request,
-        "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
-        "sqs_queues": sqs_queues,
-        "browsable_datastores": browsable_datastores,
-        "success": f"Queue '{queue_name}' deleted",
-    })
+    return templates.TemplateResponse(
+        "partials/sqs_queue_list.html",
+        {
+            "request": request,
+            "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+            "sqs_queues": sqs_queues,
+            "browsable_datastores": browsable_datastores,
+            "success": f"Queue '{queue_name}' deleted",
+        },
+    )
 
 
 @app.post("/api/sqs/queues/{queue_id}/pause", response_class=HTMLResponse)
@@ -1719,12 +1970,15 @@ async def pause_sqs_queue(request: Request, queue_id: str):
         if cred:
             q["datastore_name"] = cred.get("datastore_name", "")
 
-    return templates.TemplateResponse("partials/sqs_queue_list.html", {
-        "request": request,
-        "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
-        "sqs_queues": sqs_queues,
-        "browsable_datastores": browsable_datastores,
-    })
+    return templates.TemplateResponse(
+        "partials/sqs_queue_list.html",
+        {
+            "request": request,
+            "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+            "sqs_queues": sqs_queues,
+            "browsable_datastores": browsable_datastores,
+        },
+    )
 
 
 @app.post("/api/sqs/queues/{queue_id}/resume", response_class=HTMLResponse)
@@ -1748,12 +2002,15 @@ async def resume_sqs_queue(request: Request, queue_id: str):
         if cred:
             q["datastore_name"] = cred.get("datastore_name", "")
 
-    return templates.TemplateResponse("partials/sqs_queue_list.html", {
-        "request": request,
-        "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
-        "sqs_queues": sqs_queues,
-        "browsable_datastores": browsable_datastores,
-    })
+    return templates.TemplateResponse(
+        "partials/sqs_queue_list.html",
+        {
+            "request": request,
+            "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+            "sqs_queues": sqs_queues,
+            "browsable_datastores": browsable_datastores,
+        },
+    )
 
 
 @app.get("/api/sqs/queues/{queue_id}/info", response_class=HTMLResponse)
@@ -1761,16 +2018,19 @@ async def sqs_queue_info(request: Request, queue_id: str):
     """Get queue details and statistics."""
     _ = get_session_from_request(request)  # Verify authenticated
     from services import secrets as sec
-    from services.sqs_service import SQSService, SQSError
+    from services.sqs_service import SQSService
 
     user_id = getattr(request.state, "user_id", None)
 
     queue = db.get_sqs_queue(queue_id, user_id=user_id)
     if not queue:
-        return templates.TemplateResponse("partials/sqs_queue_info.html", {
-            "request": request,
-            "error": "Queue not found",
-        })
+        return templates.TemplateResponse(
+            "partials/sqs_queue_info.html",
+            {
+                "request": request,
+                "error": "Queue not found",
+            },
+        )
 
     # Add event count
     queue["events_today"] = db.get_sqs_event_count_today(queue_id, user_id=user_id)
@@ -1793,14 +2053,19 @@ async def sqs_queue_info(request: Request, queue_id: str):
             if access_key and secret_key:
                 sqs = SQSService(access_key, secret_key, region)
                 attrs = sqs.get_queue_attributes(queue["queue_url"])
-                queue["approximate_messages"] = attrs.get("ApproximateNumberOfMessages", "0")
+                queue["approximate_messages"] = attrs.get(
+                    "ApproximateNumberOfMessages", "0"
+                )
     except Exception:
         pass  # Ignore errors fetching queue stats
 
-    return templates.TemplateResponse("partials/sqs_queue_info.html", {
-        "request": request,
-        "queue": queue,
-    })
+    return templates.TemplateResponse(
+        "partials/sqs_queue_info.html",
+        {
+            "request": request,
+            "queue": queue,
+        },
+    )
 
 
 @app.get("/api/sqs/events", response_class=HTMLResponse)
@@ -1810,10 +2075,13 @@ async def list_sqs_events(request: Request, limit: int = 50):
     user_id = getattr(request.state, "user_id", None)
     events = db.list_sqs_events(limit=limit, user_id=user_id)
 
-    return templates.TemplateResponse("partials/sqs_events.html", {
-        "request": request,
-        "sqs_events": events,
-    })
+    return templates.TemplateResponse(
+        "partials/sqs_events.html",
+        {
+            "request": request,
+            "sqs_events": events,
+        },
+    )
 
 
 @app.get("/api/sqs/events/content", response_class=HTMLResponse)
@@ -1823,10 +2091,13 @@ async def list_sqs_events_content(request: Request, limit: int = 50):
     user_id = getattr(request.state, "user_id", None)
     events = db.list_sqs_events(limit=limit, user_id=user_id)
 
-    return templates.TemplateResponse("partials/sqs_events_content.html", {
-        "request": request,
-        "sqs_events": events,
-    })
+    return templates.TemplateResponse(
+        "partials/sqs_events_content.html",
+        {
+            "request": request,
+            "sqs_events": events,
+        },
+    )
 
 
 @app.delete("/api/sqs/events", response_class=HTMLResponse)
@@ -1837,12 +2108,16 @@ async def clear_sqs_events(request: Request):
     deleted = db.clear_sqs_events(user_id=user_id)
     state.log(f"Cleared {deleted} SQS events")
 
-    return templates.TemplateResponse("partials/sqs_events_content.html", {
-        "request": request,
-        "sqs_events": [],
-    })
+    return templates.TemplateResponse(
+        "partials/sqs_events_content.html",
+        {
+            "request": request,
+            "sqs_events": [],
+        },
+    )
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

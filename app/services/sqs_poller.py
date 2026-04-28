@@ -4,11 +4,9 @@ Polls active SQS queues for S3 event notifications and creates import jobs.
 Uses distributed locking to ensure only one worker polls at a time.
 """
 
-import asyncio
-import json
 import os
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from arq import cron
 
@@ -110,7 +108,10 @@ async def poll_sqs_queues(ctx: Dict[str, Any]) -> Dict[str, Any]:
                 user_id = queue.get("user_id")
                 sqs_creds = db.get_sqs_credentials(user_id=user_id)
                 if not sqs_creds:
-                    db.update_sqs_queue(queue["id"], error_message="No SQS credentials configured for user")
+                    db.update_sqs_queue(
+                        queue["id"],
+                        error_message="No SQS credentials configured for user",
+                    )
                     continue
 
                 # Decrypt secret key
@@ -119,16 +120,22 @@ async def poll_sqs_queues(ctx: Dict[str, Any]) -> Dict[str, Any]:
                 secret_key = secrets.get_secret(f"sqs_secret_{secret_key_encrypted}")
 
                 if not access_key or not secret_key:
-                    db.update_sqs_queue(queue["id"], error_message="Invalid SQS credentials")
+                    db.update_sqs_queue(
+                        queue["id"], error_message="Invalid SQS credentials"
+                    )
                     continue
 
                 # Use queue's region
-                queue_region = queue.get("region") or sqs_creds.get("region", "us-east-1")
+                queue_region = queue.get("region") or sqs_creds.get(
+                    "region", "us-east-1"
+                )
 
                 # Get or create SQS client for this user+region combination
                 client_key = (user_id, queue_region)
                 if client_key not in sqs_clients:
-                    sqs_clients[client_key] = SQSService(access_key, secret_key, queue_region)
+                    sqs_clients[client_key] = SQSService(
+                        access_key, secret_key, queue_region
+                    )
 
                 sqs = sqs_clients[client_key]
                 events_count = await poll_single_queue(ctx, sqs, queue)
@@ -208,7 +215,9 @@ async def poll_single_queue(
                     object_size=event.get("size"),
                     event_time=event.get("event_time"),
                 )
-                db.update_sqs_event(event_id, status="failed", error_message=str(e)[:200])
+                db.update_sqs_event(
+                    event_id, status="failed", error_message=str(e)[:200]
+                )
 
         # Delete message after processing (even if some events failed)
         try:
@@ -280,7 +289,9 @@ async def process_s3_event(
         return
 
     # Get LucidLink API token for the user who created this queue
-    token = secrets.get_user_token(user_id) if user_id else secrets.get_lucidlink_token()
+    token = (
+        secrets.get_user_token(user_id) if user_id else secrets.get_lucidlink_token()
+    )
     if not token:
         db.update_sqs_event(
             event_id,
@@ -332,7 +343,9 @@ async def process_s3_event(
                     user_id, queue_id, queue_name, object_key, "success"
                 )
             elif code in [400, 409] and "already exists" in error_msg.lower():
-                db.update_sqs_event(event_id, status="skipped", error_message="Already exists")
+                db.update_sqs_event(
+                    event_id, status="skipped", error_message="Already exists"
+                )
             else:
                 db.update_sqs_event(
                     event_id,
@@ -341,8 +354,12 @@ async def process_s3_event(
                 )
                 # Log failed SQS event
                 ActivityLogger.sqs_event_processed(
-                    user_id, queue_id, queue_name, object_key, "failed",
-                    error=f"HTTP {code}: {error_msg[:100]}"
+                    user_id,
+                    queue_id,
+                    queue_name,
+                    object_key,
+                    "failed",
+                    error=f"HTTP {code}: {error_msg[:100]}",
                 )
         else:
             db.update_sqs_event(
@@ -352,8 +369,12 @@ async def process_s3_event(
             )
             # Log failed SQS event
             ActivityLogger.sqs_event_processed(
-                user_id, queue_id, queue_name, object_key, "failed",
-                error=f"Folder creation failed: {structure_error[:100]}"
+                user_id,
+                queue_id,
+                queue_name,
+                object_key,
+                "failed",
+                error=f"Folder creation failed: {structure_error[:100]}",
             )
 
         await ll_client.close()
@@ -363,8 +384,7 @@ async def process_s3_event(
         # Log failed SQS event
         queue_name = queue.get("name", queue_id[:8])
         ActivityLogger.sqs_event_processed(
-            user_id, queue_id, queue_name, object_key, "failed",
-            error=str(e)[:100]
+            user_id, queue_id, queue_name, object_key, "failed", error=str(e)[:100]
         )
 
 

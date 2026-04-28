@@ -23,7 +23,9 @@ class LucidLinkClient:
         self.api_host: str = api_host or LL_HOST
         self._client: Optional[httpx.AsyncClient] = None
 
-    def configure(self, token: str, filespace_id: str, datastore_id: str, api_host: str = "") -> None:
+    def configure(
+        self, token: str, filespace_id: str, datastore_id: str, api_host: str = ""
+    ) -> None:
         """Configure the client with authentication and IDs."""
         self.token = self._clean_token(token)
         self.filespace_id = filespace_id
@@ -63,7 +65,9 @@ class LucidLinkClient:
             "accept": "application/json",
         }
 
-    async def list_filespaces(self, token: str, api_host: str = "") -> Union[List[Dict], str]:
+    async def list_filespaces(
+        self, token: str, api_host: str = ""
+    ) -> Union[List[Dict], str]:
         """List all available filespaces."""
         host = api_host or self.api_host
         url = f"{host}/filespaces"
@@ -90,7 +94,11 @@ class LucidLinkClient:
                     error_body = resp.text[:200] if resp.text else ""
                 except Exception:
                     pass
-                return f"HTTP {resp.status_code}: {error_body}" if error_body else f"HTTP {resp.status_code}"
+                return (
+                    f"HTTP {resp.status_code}: {error_body}"
+                    if error_body
+                    else f"HTTP {resp.status_code}"
+                )
 
         except httpx.TimeoutException:
             return "TIMEOUT: Connection timed out"
@@ -99,7 +107,9 @@ class LucidLinkClient:
         except Exception as e:
             return f"CONN_ERR: {e}"
 
-    async def list_datastores(self, token: str, filespace_id: str, api_host: str = "") -> List[Dict]:
+    async def list_datastores(
+        self, token: str, filespace_id: str, api_host: str = ""
+    ) -> List[Dict]:
         """List datastores for a filespace."""
         host = api_host or self.api_host
         url = f"{host}/filespaces/{filespace_id}/external/data-stores"
@@ -123,7 +133,9 @@ class LucidLinkClient:
 
         return []
 
-    async def get_datastore(self, token: str, filespace_id: str, datastore_id: str, api_host: str = "") -> Union[Dict, str]:
+    async def get_datastore(
+        self, token: str, filespace_id: str, datastore_id: str, api_host: str = ""
+    ) -> Union[Dict, str]:
         """Get DataStore details."""
         host = api_host or self.api_host
         url = f"{host}/filespaces/{filespace_id}/external/data-stores/{datastore_id}"
@@ -152,7 +164,9 @@ class LucidLinkClient:
         except Exception as e:
             return f"CONN_ERR: {e}"
 
-    async def delete_datastore(self, token: str, filespace_id: str, datastore_id: str, api_host: str = "") -> str:
+    async def delete_datastore(
+        self, token: str, filespace_id: str, datastore_id: str, api_host: str = ""
+    ) -> str:
         """Delete a DataStore. Returns 'SUCCESS' or error message."""
         host = api_host or self.api_host
         url = f"{host}/filespaces/{filespace_id}/external/data-stores/{datastore_id}"
@@ -252,7 +266,9 @@ class LucidLinkClient:
 
         return None
 
-    async def create_folder(self, name: str, parent_id: Optional[str]) -> tuple[Optional[str], str]:
+    async def create_folder(
+        self, name: str, parent_id: Optional[str]
+    ) -> tuple[Optional[str], str]:
         """Create a folder in the filespace. Returns (id, error_message)."""
         if not self.base_url:
             return None, "No base URL configured"
@@ -303,7 +319,11 @@ class LucidLinkClient:
             error_msg = ""
             if resp.status_code >= 400:
                 try:
-                    error_msg = resp.text[:500] if resp.text else f"HTTP {resp.status_code} (no body)"
+                    error_msg = (
+                        resp.text[:500]
+                        if resp.text
+                        else f"HTTP {resp.status_code} (no body)"
+                    )
                 except Exception:
                     error_msg = f"HTTP {resp.status_code}"
             return resp.status_code, error_msg

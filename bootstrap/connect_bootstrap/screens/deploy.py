@@ -41,7 +41,9 @@ class DeployScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Vertical(id="deploy-pane"):
-            yield Static("[b]Step 7 / 8[/b] — Service deploy + ALB target health", id="title")
+            yield Static(
+                "[b]Step 7 / 8[/b] — Service deploy + ALB target health", id="title"
+            )
             yield RichLog(id="log", highlight=True, markup=True)
             yield ProgressBar(id="progress", total=100, show_eta=False)
             with Horizontal():
@@ -74,7 +76,9 @@ class DeployScreen(Screen):
         worker = self.app.state.worker_service_name
         region = self.app.state.aws_region
         if not (cluster and web and worker):
-            log.write("[red]missing cluster/service names from state — re-run terraform apply[/red]")
+            log.write(
+                "[red]missing cluster/service names from state — re-run terraform apply[/red]"
+            )
             return
 
         ecs = boto3_client("ecs", region_name=region)
@@ -118,7 +122,9 @@ class DeployScreen(Screen):
         progress.update(progress=100)
         if healthy:
             self.app.state.deploy_succeeded = True
-            log.write(f"[green]✓ at least one target healthy[/green]  →  https://{self.app.state.domain}/health")
+            log.write(
+                f"[green]✓ at least one target healthy[/green]  →  https://{self.app.state.domain}/health"
+            )
             self.query_one("#next", Button).disabled = False
         else:
             log.write("[red]no healthy targets within 2 min — investigate[/red]")
@@ -142,7 +148,9 @@ class DeployScreen(Screen):
         return [lb["targetGroupArn"] for lb in lbs if "targetGroupArn" in lb]
 
     @staticmethod
-    def _wait_for_healthy_targets(elbv2, tg_arns: list[str], deadline_s: int = 120) -> bool:
+    def _wait_for_healthy_targets(
+        elbv2, tg_arns: list[str], deadline_s: int = 120
+    ) -> bool:
         import time
 
         deadline = time.monotonic() + deadline_s

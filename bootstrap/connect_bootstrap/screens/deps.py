@@ -30,7 +30,9 @@ DEPS: tuple[Dep, ...] = (
     Dep("aws", ("aws", "--version"), "v2.13+"),
     Dep("terraform", ("terraform", "version"), "1.5+"),
     Dep("jq", ("jq", "--version"), "1.6+"),
-    Dep("gh", ("gh", "--version"), "2.40+", required=False),  # only needed for AWS_ROLE_ARN push
+    Dep(
+        "gh", ("gh", "--version"), "2.40+", required=False
+    ),  # only needed for AWS_ROLE_ARN push
     Dep("docker", ("docker", "--version"), "24+", required=False),  # for local dev only
 )
 
@@ -81,17 +83,23 @@ class DepsCheckScreen(Screen):
             status, version = await self._probe(dep)
             row_required = "yes" if dep.required else "no"
             row_status = status
-            table.add_row(row_required, dep.name, row_status, version, f"need {dep.minimum}")
+            table.add_row(
+                row_required, dep.name, row_status, version, f"need {dep.minimum}"
+            )
             if dep.required and not status.startswith("✓"):
                 all_required_ok = False
 
         hint = self.query_one("#hint", Static)
         next_btn = self.query_one("#next", Button)
         if all_required_ok:
-            hint.update("All required deps present. Press [b]n[/b] or click [b]Next →[/b].")
+            hint.update(
+                "All required deps present. Press [b]n[/b] or click [b]Next →[/b]."
+            )
             next_btn.disabled = False
         else:
-            hint.update("[red]Required dep missing.[/red] Install it, then press [b]r[/b] to recheck.")
+            hint.update(
+                "[red]Required dep missing.[/red] Install it, then press [b]r[/b] to recheck."
+            )
             next_btn.disabled = True
 
     async def _probe(self, dep: Dep) -> tuple[str, str]:
@@ -102,7 +110,9 @@ class DepsCheckScreen(Screen):
         except Exception as e:  # subprocess.TimeoutError, FileNotFoundError, etc.
             return "✗ probe error", str(e)[:40]
         if rc != 0:
-            return "✗ exit nonzero", out.splitlines()[0] if out else err.splitlines()[0] if err else ""
+            return "✗ exit nonzero", out.splitlines()[0] if out else err.splitlines()[
+                0
+            ] if err else ""
         first_line = (out or err).splitlines()[0] if (out or err) else "?"
         return "✓ ok", first_line[:40]
 

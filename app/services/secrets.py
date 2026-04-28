@@ -31,18 +31,23 @@ def _get_fernet_key() -> bytes:
     """Derive a Fernet key from JWT_SECRET_KEY using PBKDF2."""
     jwt_secret = os.getenv("JWT_SECRET_KEY", "")
     if not jwt_secret:
-        raise RuntimeError("JWT_SECRET_KEY environment variable required for secrets encryption")
+        raise RuntimeError(
+            "JWT_SECRET_KEY environment variable required for secrets encryption"
+        )
 
     # Use PBKDF2 to derive a 32-byte key, then base64 encode for Fernet
     # Salt is fixed (app-specific) since we need deterministic key derivation
     salt = b"lucidlink-labs-secrets-v1"
-    key = hashlib.pbkdf2_hmac("sha256", jwt_secret.encode(), salt, iterations=100000, dklen=32)
+    key = hashlib.pbkdf2_hmac(
+        "sha256", jwt_secret.encode(), salt, iterations=100000, dklen=32
+    )
     return base64.urlsafe_b64encode(key)
 
 
 def _get_fernet() -> "Fernet":
     """Get a Fernet instance for encryption/decryption."""
     return Fernet(_get_fernet_key())
+
 
 # Secret keys
 KEY_LL_TOKEN = "lucidlink_api_token"
@@ -154,6 +159,7 @@ def delete_secret(key: str) -> bool:
 
 # Convenience functions for specific secrets
 
+
 def set_lucidlink_token(token: str) -> None:
     """Store the LucidLink API token."""
     set_secret(KEY_LL_TOKEN, token)
@@ -199,6 +205,7 @@ def clear_all_secrets() -> None:
 
 # ============== Named Credentials (for multi-config support) ==============
 
+
 def generate_credentials_key() -> str:
     """Generate a unique key for storing credentials."""
     return uuid.uuid4().hex[:8]
@@ -208,10 +215,12 @@ def set_named_credentials(key: str, access_key: str, secret_key: str) -> None:
     """Store AWS credentials with a unique key."""
     if not key or not access_key or not secret_key:
         return
-    cred_data = json.dumps({
-        "access_key": access_key,
-        "secret_key": secret_key,
-    })
+    cred_data = json.dumps(
+        {
+            "access_key": access_key,
+            "secret_key": secret_key,
+        }
+    )
     set_secret(f"aws_creds_{key}", cred_data)
 
 
@@ -237,6 +246,7 @@ def delete_named_credentials(key: str) -> bool:
 
 
 # ============== User-Specific Tokens (for multi-user support) ==============
+
 
 def set_user_token(user_id: str, token: str) -> None:
     """Store a LucidLink API token for a specific user."""

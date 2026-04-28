@@ -30,7 +30,11 @@ async def run_capture(
         proc.kill()
         await proc.wait()
         raise
-    return proc.returncode or 0, stdout_b.decode(errors="replace"), stderr_b.decode(errors="replace")
+    return (
+        proc.returncode or 0,
+        stdout_b.decode(errors="replace"),
+        stderr_b.decode(errors="replace"),
+    )
 
 
 async def run_stream(
@@ -50,7 +54,9 @@ async def run_stream(
         env={**os.environ, **(env or {})},
     )
 
-    async def _drain(stream: asyncio.StreamReader, label: str, q: asyncio.Queue) -> None:
+    async def _drain(
+        stream: asyncio.StreamReader, label: str, q: asyncio.Queue
+    ) -> None:
         async for line in stream:
             await q.put((label, line.decode(errors="replace").rstrip("\n")))
         await q.put((label, None))  # sentinel for end-of-stream

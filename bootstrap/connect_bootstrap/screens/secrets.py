@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import secrets as py_secrets
-from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -88,7 +87,11 @@ class SecretsScreen(Screen):
 
         missing = [
             name
-            for name, val in (("jwt", jwt), ("admin_email", admin_email), ("admin_password", admin_password))
+            for name, val in (
+                ("jwt", jwt),
+                ("admin_email", admin_email),
+                ("admin_password", admin_password),
+            )
             if not val
         ]
         if missing:
@@ -106,7 +109,9 @@ class SecretsScreen(Screen):
             )
             sm.put_secret_value(
                 SecretId=f"/connect/{env}/admin",
-                SecretString=json.dumps({"email": admin_email, "password": admin_password}),
+                SecretString=json.dumps(
+                    {"email": admin_email, "password": admin_password}
+                ),
             )
         except Exception as e:
             status.update(f"[red]put_secret_value failed:[/red] {e}")

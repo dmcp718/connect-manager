@@ -13,7 +13,16 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Input, Label, RadioButton, RadioSet, Static
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    Input,
+    Label,
+    RadioButton,
+    RadioSet,
+    Static,
+)
 
 from connect_bootstrap.shell import run_capture
 
@@ -42,9 +51,18 @@ class AwsAuthScreen(Screen):
             yield Static("[b]Step 2 / 8[/b] — AWS authentication", id="title")
             yield Label("Pick a credential source:")
             with RadioSet(id="method"):
-                yield RadioButton("Existing profile / env vars (current shell)", value=True, id="m_env")
-                yield RadioButton("AWS SSO login (aws sso login --profile <name>)", id="m_sso")
-                yield RadioButton("ministack (AWS_ENDPOINT_URL=http://localhost:4566)", id="m_ministack")
+                yield RadioButton(
+                    "Existing profile / env vars (current shell)",
+                    value=True,
+                    id="m_env",
+                )
+                yield RadioButton(
+                    "AWS SSO login (aws sso login --profile <name>)", id="m_sso"
+                )
+                yield RadioButton(
+                    "ministack (AWS_ENDPOINT_URL=http://localhost:4566)",
+                    id="m_ministack",
+                )
             yield Label("Profile name (optional, used for SSO):")
             yield Input(placeholder="connect-prod", id="profile")
             yield Label("Region:")
@@ -89,19 +107,29 @@ class AwsAuthScreen(Screen):
                 ["aws", "sso", "login", "--profile", profile], env=env, timeout=120.0
             )
             if sso_rc != 0:
-                status.update(f"[red]SSO login failed:[/red] {sso_err.splitlines()[0] if sso_err else 'see terminal'}")
+                status.update(
+                    f"[red]SSO login failed:[/red] {sso_err.splitlines()[0] if sso_err else 'see terminal'}"
+                )
                 return
         elif method and method.id == "m_ministack":
             env["AWS_ENDPOINT_URL"] = "http://localhost:4566"
-            env.setdefault("AWS_ACCESS_KEY_ID", os.environ.get("AWS_ACCESS_KEY_ID", "test"))
-            env.setdefault("AWS_SECRET_ACCESS_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", "test"))
+            env.setdefault(
+                "AWS_ACCESS_KEY_ID", os.environ.get("AWS_ACCESS_KEY_ID", "test")
+            )
+            env.setdefault(
+                "AWS_SECRET_ACCESS_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", "test")
+            )
 
         status.update("Running [b]aws sts get-caller-identity[/b] …")
         rc, out, err = await run_capture(
-            ["aws", "sts", "get-caller-identity", "--output", "json"], env=env, timeout=15.0
+            ["aws", "sts", "get-caller-identity", "--output", "json"],
+            env=env,
+            timeout=15.0,
         )
         if rc != 0:
-            status.update(f"[red]get-caller-identity failed:[/red] {err.splitlines()[0] if err else out.splitlines()[0] if out else ''}")
+            status.update(
+                f"[red]get-caller-identity failed:[/red] {err.splitlines()[0] if err else out.splitlines()[0] if out else ''}"
+            )
             return
 
         import json

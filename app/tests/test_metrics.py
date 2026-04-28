@@ -286,6 +286,8 @@ def test_all_six_metric_names_registered() -> None:
     }
     seen = {m.name for m in registry.collect()}
     missing = {
-        spec_name for spec_name, family_name in expected.items() if family_name not in seen
+        spec_name
+        for spec_name, family_name in expected.items()
+        if family_name not in seen
     }
     assert not missing, f"missing from registry: {missing}"

@@ -50,7 +50,7 @@ class StatusScreen(Screen):
         yield Header(show_clock=True)
         with Vertical(id="status-pane"):
             yield Static("[b]Step 8 / 8[/b] — Status dashboard", id="title")
-            yield Static(f"App URL: [link]https://{{}}[/link]", id="url")
+            yield Static("App URL: [link]https://{}[/link]", id="url")
             yield Static("[b]ECS services[/b]")
             yield DataTable(id="services-tbl")
             yield Static("[b]ALB targets[/b]")
@@ -63,12 +63,18 @@ class StatusScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#services-tbl", DataTable).add_columns("Service", "Desired", "Running", "Pending")
+        self.query_one("#services-tbl", DataTable).add_columns(
+            "Service", "Desired", "Running", "Pending"
+        )
         self.query_one("#alb-tbl", DataTable).add_columns("Target", "State", "Reason")
-        self.query_one("#alarms-tbl", DataTable).add_columns("Alarm", "State", "Updated")
+        self.query_one("#alarms-tbl", DataTable).add_columns(
+            "Alarm", "State", "Updated"
+        )
 
         url_w = self.query_one("#url", Static)
-        url_w.update(f"App URL: [link]https://{self.app.state.domain or '<domain>'}/[/link]")
+        url_w.update(
+            f"App URL: [link]https://{self.app.state.domain or '<domain>'}/[/link]"
+        )
 
         # Kick off the refresh loop.
         self._refresh_task = asyncio.create_task(self._refresh_loop())
@@ -107,7 +113,9 @@ class StatusScreen(Screen):
         worker = self.app.state.worker_service_name
 
         if not (cluster and web and worker):
-            self.query_one("#last-updated", Static).update("[red]missing state — re-run apply[/red]")
+            self.query_one("#last-updated", Static).update(
+                "[red]missing state — re-run apply[/red]"
+            )
             return
 
         ecs = boto3_client("ecs", region_name=region)
@@ -146,7 +154,9 @@ class StatusScreen(Screen):
         tbl = self.query_one("#alb-tbl", DataTable)
         tbl.clear()
         try:
-            svcs = ecs.describe_services(cluster=cluster, services=[web]).get("services", [])
+            svcs = ecs.describe_services(cluster=cluster, services=[web]).get(
+                "services", []
+            )
             if not svcs:
                 return
             for lb in svcs[0].get("loadBalancers", []):

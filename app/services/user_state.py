@@ -42,22 +42,33 @@ def _legacy_get_setting(_key: str) -> Optional[str]:
 
 
 def _legacy_set_setting(key: str, _value: str) -> None:
-    _log_legacy.warning("set_setting skipped (no settings repo)", extra={"setting_key": key})
+    _log_legacy.warning(
+        "set_setting skipped (no settings repo)", extra={"setting_key": key}
+    )
 
 
-def _legacy_get_all_datastore_credentials(*, user_id: Optional[str] = None) -> List[Dict]:
+def _legacy_get_all_datastore_credentials(
+    *, user_id: Optional[str] = None
+) -> List[Dict]:
     return []
 
 
-def _legacy_get_datastore_credentials(_datastore_id: str, *, user_id: Optional[str] = None) -> Optional[Dict]:
+def _legacy_get_datastore_credentials(
+    _datastore_id: str, *, user_id: Optional[str] = None
+) -> Optional[Dict]:
     return None
 
 
 def _legacy_save_datastore_credentials(**kwargs: Any) -> None:
-    _log_legacy.warning("save_datastore_credentials skipped (use state.save_datastore_credentials async)", extra=kwargs)
+    _log_legacy.warning(
+        "save_datastore_credentials skipped (use state.save_datastore_credentials async)",
+        extra=kwargs,
+    )
 
 
-def _legacy_delete_datastore_credentials(_datastore_id: str, *, user_id: Optional[str] = None) -> bool:
+def _legacy_delete_datastore_credentials(
+    _datastore_id: str, *, user_id: Optional[str] = None
+) -> bool:
     return False
 
 

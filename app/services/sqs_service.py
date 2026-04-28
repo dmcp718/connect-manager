@@ -18,7 +18,7 @@ class S3NotificationService:
     def __init__(self, access_key: str, secret_key: str, region: str):
         """Initialize S3 client with credentials."""
         self.client = boto3.client(
-            's3',
+            "s3",
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name=region,
@@ -28,9 +28,11 @@ class S3NotificationService:
     def get_bucket_notification_configuration(self, bucket_name: str) -> Dict[str, Any]:
         """Get current notification configuration for a bucket."""
         try:
-            response = self.client.get_bucket_notification_configuration(Bucket=bucket_name)
+            response = self.client.get_bucket_notification_configuration(
+                Bucket=bucket_name
+            )
             # Remove ResponseMetadata
-            response.pop('ResponseMetadata', None)
+            response.pop("ResponseMetadata", None)
             return response
         except ClientError as e:
             raise S3NotificationError(f"Failed to get bucket notifications: {e}")
@@ -66,47 +68,50 @@ class S3NotificationService:
             current_config = self.get_bucket_notification_configuration(bucket_name)
 
             # Get existing queue configurations
-            queue_configs = current_config.get('QueueConfigurations', [])
+            queue_configs = current_config.get("QueueConfigurations", [])
 
             # Check if we already have a config with this ID or queue ARN
             queue_configs = [
-                cfg for cfg in queue_configs
-                if cfg.get('Id') != notification_id and cfg.get('QueueArn') != queue_arn
+                cfg
+                for cfg in queue_configs
+                if cfg.get("Id") != notification_id and cfg.get("QueueArn") != queue_arn
             ]
 
             # Build filter rules if prefix or suffix specified
             filter_rules = []
             if prefix:
-                filter_rules.append({'Name': 'prefix', 'Value': prefix})
+                filter_rules.append({"Name": "prefix", "Value": prefix})
             if suffix:
-                filter_rules.append({'Name': 'suffix', 'Value': suffix})
+                filter_rules.append({"Name": "suffix", "Value": suffix})
 
             # Create new notification config
             new_config = {
-                'Id': notification_id,
-                'QueueArn': queue_arn,
-                'Events': events,
+                "Id": notification_id,
+                "QueueArn": queue_arn,
+                "Events": events,
             }
 
             if filter_rules:
-                new_config['Filter'] = {
-                    'Key': {
-                        'FilterRules': filter_rules
-                    }
-                }
+                new_config["Filter"] = {"Key": {"FilterRules": filter_rules}}
 
             queue_configs.append(new_config)
 
             # Build full configuration (preserve other notification types)
             full_config = {}
             if queue_configs:
-                full_config['QueueConfigurations'] = queue_configs
-            if current_config.get('TopicConfigurations'):
-                full_config['TopicConfigurations'] = current_config['TopicConfigurations']
-            if current_config.get('LambdaFunctionConfigurations'):
-                full_config['LambdaFunctionConfigurations'] = current_config['LambdaFunctionConfigurations']
-            if current_config.get('EventBridgeConfiguration'):
-                full_config['EventBridgeConfiguration'] = current_config['EventBridgeConfiguration']
+                full_config["QueueConfigurations"] = queue_configs
+            if current_config.get("TopicConfigurations"):
+                full_config["TopicConfigurations"] = current_config[
+                    "TopicConfigurations"
+                ]
+            if current_config.get("LambdaFunctionConfigurations"):
+                full_config["LambdaFunctionConfigurations"] = current_config[
+                    "LambdaFunctionConfigurations"
+                ]
+            if current_config.get("EventBridgeConfiguration"):
+                full_config["EventBridgeConfiguration"] = current_config[
+                    "EventBridgeConfiguration"
+                ]
 
             # Apply configuration
             self.client.put_bucket_notification_configuration(
@@ -117,14 +122,19 @@ class S3NotificationService:
             return True
 
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', '')
-            error_msg = e.response.get('Error', {}).get('Message', str(e))
+            error_code = e.response.get("Error", {}).get("Code", "")
+            error_msg = e.response.get("Error", {}).get("Message", str(e))
 
-            if 'InvalidArgument' in error_code or 'unable to validate' in error_msg.lower():
+            if (
+                "InvalidArgument" in error_code
+                or "unable to validate" in error_msg.lower()
+            ):
                 raise S3NotificationError(
                     f"S3 cannot send to SQS queue. Ensure the queue policy allows s3:SendMessage from this bucket. Error: {error_msg}"
                 )
-            raise S3NotificationError(f"Failed to configure bucket notifications: {error_msg}")
+            raise S3NotificationError(
+                f"Failed to configure bucket notifications: {error_msg}"
+            )
 
     def remove_sqs_notification(self, bucket_name: str, queue_arn: str) -> bool:
         """
@@ -141,19 +151,27 @@ class S3NotificationService:
             current_config = self.get_bucket_notification_configuration(bucket_name)
 
             # Filter out the queue ARN
-            queue_configs = current_config.get('QueueConfigurations', [])
-            queue_configs = [cfg for cfg in queue_configs if cfg.get('QueueArn') != queue_arn]
+            queue_configs = current_config.get("QueueConfigurations", [])
+            queue_configs = [
+                cfg for cfg in queue_configs if cfg.get("QueueArn") != queue_arn
+            ]
 
             # Build full configuration
             full_config = {}
             if queue_configs:
-                full_config['QueueConfigurations'] = queue_configs
-            if current_config.get('TopicConfigurations'):
-                full_config['TopicConfigurations'] = current_config['TopicConfigurations']
-            if current_config.get('LambdaFunctionConfigurations'):
-                full_config['LambdaFunctionConfigurations'] = current_config['LambdaFunctionConfigurations']
-            if current_config.get('EventBridgeConfiguration'):
-                full_config['EventBridgeConfiguration'] = current_config['EventBridgeConfiguration']
+                full_config["QueueConfigurations"] = queue_configs
+            if current_config.get("TopicConfigurations"):
+                full_config["TopicConfigurations"] = current_config[
+                    "TopicConfigurations"
+                ]
+            if current_config.get("LambdaFunctionConfigurations"):
+                full_config["LambdaFunctionConfigurations"] = current_config[
+                    "LambdaFunctionConfigurations"
+                ]
+            if current_config.get("EventBridgeConfiguration"):
+                full_config["EventBridgeConfiguration"] = current_config[
+                    "EventBridgeConfiguration"
+                ]
 
             # Apply configuration (empty dict clears all if nothing left)
             self.client.put_bucket_notification_configuration(
@@ -169,6 +187,7 @@ class S3NotificationService:
 
 class S3NotificationError(Exception):
     """Custom exception for S3 notification errors."""
+
     pass
 
 
@@ -178,7 +197,7 @@ class SQSService:
     def __init__(self, access_key: str, secret_key: str, region: str):
         """Initialize SQS client with credentials."""
         self.client = boto3.client(
-            'sqs',
+            "sqs",
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name=region,
@@ -207,10 +226,10 @@ class SQSService:
                 QueueUrl=queue_url,
                 MaxNumberOfMessages=min(max_messages, 10),
                 WaitTimeSeconds=wait_time_seconds,
-                AttributeNames=['All'],
-                MessageAttributeNames=['All'],
+                AttributeNames=["All"],
+                MessageAttributeNames=["All"],
             )
-            return response.get('Messages', [])
+            return response.get("Messages", [])
         except ClientError as e:
             raise SQSError(f"Failed to receive messages: {e}")
 
@@ -247,9 +266,9 @@ class SQSService:
         try:
             response = self.client.get_queue_attributes(
                 QueueUrl=queue_url,
-                AttributeNames=['All'],
+                AttributeNames=["All"],
             )
-            return response.get('Attributes', {})
+            return response.get("Attributes", {})
         except ClientError as e:
             raise SQSError(f"Failed to get queue attributes: {e}")
 
@@ -265,21 +284,21 @@ class SQSService:
         """
         try:
             attrs = self.get_queue_attributes(queue_url)
-            arn = attrs.get('QueueArn', '')
+            arn = attrs.get("QueueArn", "")
 
             # Extract name from ARN (arn:aws:sqs:region:account:name)
-            name = arn.split(':')[-1] if arn else queue_url.split('/')[-1]
+            name = arn.split(":")[-1] if arn else queue_url.split("/")[-1]
 
             # Extract region from ARN
-            arn_parts = arn.split(':')
+            arn_parts = arn.split(":")
             region = arn_parts[3] if len(arn_parts) > 3 else self.region
 
             return {
-                'url': queue_url,
-                'arn': arn,
-                'name': name,
-                'region': region,
-                'approximate_messages': attrs.get('ApproximateNumberOfMessages', '0'),
+                "url": queue_url,
+                "arn": arn,
+                "name": name,
+                "region": region,
+                "approximate_messages": attrs.get("ApproximateNumberOfMessages", "0"),
             }
         except ClientError as e:
             raise SQSError(f"Failed to validate queue: {e}")
@@ -305,18 +324,18 @@ class SQSService:
             response = self.client.create_queue(
                 QueueName=queue_name,
                 Attributes={
-                    'VisibilityTimeout': str(visibility_timeout),
-                    'MessageRetentionPeriod': str(message_retention),
+                    "VisibilityTimeout": str(visibility_timeout),
+                    "MessageRetentionPeriod": str(message_retention),
                 },
             )
-            queue_url = response['QueueUrl']
+            queue_url = response["QueueUrl"]
 
             # Get full attributes including ARN
             return self.validate_queue_url(queue_url)
 
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', '')
-            if error_code == 'QueueAlreadyExists':
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code == "QueueAlreadyExists":
                 raise SQSError(f"Queue '{queue_name}' already exists")
             raise SQSError(f"Failed to create queue: {e}")
 
@@ -333,27 +352,31 @@ class SQSService:
         try:
             params = {}
             if prefix:
-                params['QueueNamePrefix'] = prefix
+                params["QueueNamePrefix"] = prefix
 
             response = self.client.list_queues(**params)
-            queue_urls = response.get('QueueUrls', [])
+            queue_urls = response.get("QueueUrls", [])
 
             queues = []
             for url in queue_urls:
                 # Extract queue name from URL
                 # URL format: https://sqs.region.amazonaws.com/account-id/queue-name
-                name = url.split('/')[-1]
-                queues.append({
-                    'url': url,
-                    'name': name,
-                })
+                name = url.split("/")[-1]
+                queues.append(
+                    {
+                        "url": url,
+                        "name": name,
+                    }
+                )
 
             return queues
 
         except ClientError as e:
             raise SQSError(f"Failed to list queues: {e}")
 
-    def get_queue_policy_for_s3(self, queue_arn: str, bucket_name: str, account_id: str) -> str:
+    def get_queue_policy_for_s3(
+        self, queue_arn: str, bucket_name: str, account_id: str
+    ) -> str:
         """
         Generate an SQS policy that allows S3 to send notifications.
 
@@ -372,21 +395,15 @@ class SQSService:
                 {
                     "Sid": "AllowS3ToSendMessage",
                     "Effect": "Allow",
-                    "Principal": {
-                        "Service": "s3.amazonaws.com"
-                    },
+                    "Principal": {"Service": "s3.amazonaws.com"},
                     "Action": "sqs:SendMessage",
                     "Resource": queue_arn,
                     "Condition": {
-                        "ArnLike": {
-                            "aws:SourceArn": f"arn:aws:s3:::{bucket_name}"
-                        },
-                        "StringEquals": {
-                            "aws:SourceAccount": account_id
-                        }
-                    }
+                        "ArnLike": {"aws:SourceArn": f"arn:aws:s3:::{bucket_name}"},
+                        "StringEquals": {"aws:SourceAccount": account_id},
+                    },
                 }
-            ]
+            ],
         }
         return json.dumps(policy)
 
@@ -405,8 +422,8 @@ class SQSService:
             self.client.set_queue_attributes(
                 QueueUrl=queue_url,
                 Attributes={
-                    'Policy': policy,
-                }
+                    "Policy": policy,
+                },
             )
             return True
         except ClientError as e:
@@ -426,14 +443,14 @@ class SQSService:
         try:
             # Get queue ARN and account ID
             attrs = self.get_queue_attributes(queue_url)
-            queue_arn = attrs.get('QueueArn', '')
+            queue_arn = attrs.get("QueueArn", "")
 
             if not queue_arn:
                 raise SQSError("Could not get queue ARN")
 
             # Extract account ID from ARN
-            arn_parts = queue_arn.split(':')
-            account_id = arn_parts[4] if len(arn_parts) > 4 else ''
+            arn_parts = queue_arn.split(":")
+            account_id = arn_parts[4] if len(arn_parts) > 4 else ""
 
             if not account_id:
                 raise SQSError("Could not determine AWS account ID")
@@ -493,36 +510,38 @@ class SQSService:
             data = json.loads(message_body)
 
             # Handle SNS-wrapped messages (S3 -> SNS -> SQS)
-            if 'Message' in data and isinstance(data.get('Message'), str):
+            if "Message" in data and isinstance(data.get("Message"), str):
                 # SNS wraps the S3 event in a "Message" field
-                data = json.loads(data['Message'])
+                data = json.loads(data["Message"])
 
-            records = data.get('Records', [])
+            records = data.get("Records", [])
             for record in records:
                 # Only process S3 events
-                if record.get('eventSource') != 'aws:s3':
+                if record.get("eventSource") != "aws:s3":
                     continue
 
-                event_name = record.get('eventName', '')
-                s3_info = record.get('s3', {})
-                bucket_info = s3_info.get('bucket', {})
-                object_info = s3_info.get('object', {})
+                event_name = record.get("eventName", "")
+                s3_info = record.get("s3", {})
+                bucket_info = s3_info.get("bucket", {})
+                object_info = s3_info.get("object", {})
 
                 # URL-decode the object key (S3 URL-encodes special chars)
-                object_key = unquote_plus(object_info.get('key', ''))
+                object_key = unquote_plus(object_info.get("key", ""))
 
                 # Skip test events
-                if event_name == 's3:TestEvent' or object_key == '':
+                if event_name == "s3:TestEvent" or object_key == "":
                     continue
 
-                events.append({
-                    'event_type': event_name,
-                    'bucket': bucket_info.get('name', ''),
-                    'key': object_key,
-                    'size': object_info.get('size'),
-                    'event_time': record.get('eventTime'),
-                    'aws_region': record.get('awsRegion'),
-                })
+                events.append(
+                    {
+                        "event_type": event_name,
+                        "bucket": bucket_info.get("name", ""),
+                        "key": object_key,
+                        "size": object_info.get("size"),
+                        "event_time": record.get("eventTime"),
+                        "aws_region": record.get("awsRegion"),
+                    }
+                )
 
         except json.JSONDecodeError:
             # Not a JSON message - might be a test message
@@ -534,10 +553,10 @@ class SQSService:
     def is_create_event(event_type: str) -> bool:
         """Check if event type is an object creation event."""
         create_patterns = [
-            'ObjectCreated:Put',
-            'ObjectCreated:Post',
-            'ObjectCreated:Copy',
-            'ObjectCreated:CompleteMultipartUpload',
+            "ObjectCreated:Put",
+            "ObjectCreated:Post",
+            "ObjectCreated:Copy",
+            "ObjectCreated:CompleteMultipartUpload",
         ]
         return event_type in create_patterns
 
@@ -549,7 +568,7 @@ class SQSService:
         ARN format: arn:aws:sqs:region:account-id:queue-name
         URL format: https://sqs.region.amazonaws.com/account-id/queue-name
         """
-        match = re.match(r'arn:aws:sqs:([^:]+):([^:]+):(.+)', arn)
+        match = re.match(r"arn:aws:sqs:([^:]+):([^:]+):(.+)", arn)
         if match:
             region, account_id, queue_name = match.groups()
             return f"https://sqs.{region}.amazonaws.com/{account_id}/{queue_name}"
@@ -569,11 +588,11 @@ class SQSService:
         input_str = input_str.strip()
 
         # Already a URL
-        if input_str.startswith('https://'):
+        if input_str.startswith("https://"):
             return input_str
 
         # ARN format
-        if input_str.startswith('arn:aws:sqs:'):
+        if input_str.startswith("arn:aws:sqs:"):
             return SQSService.queue_url_from_arn(input_str)
 
         return None
@@ -581,4 +600,5 @@ class SQSService:
 
 class SQSError(Exception):
     """Custom exception for SQS errors."""
+
     pass

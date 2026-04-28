@@ -101,7 +101,9 @@ class ApplyScreen(Screen):
         log.clear()
         log.write("[b]$ terraform init -input=false[/b]")
         rc, out, err = await run_capture(
-            ["terraform", "init", "-input=false"], cwd=str(self._terraform_dir()), timeout=120.0
+            ["terraform", "init", "-input=false"],
+            cwd=str(self._terraform_dir()),
+            timeout=120.0,
         )
         for line in (out + err).splitlines():
             log.write(line)
@@ -126,7 +128,11 @@ class ApplyScreen(Screen):
         summary_w = self.query_one("#summary", Static)
         summary_w.update(
             f"[b]Plan summary:[/b] +{summary.add}  ~{summary.change}  −{summary.destroy}"
-            + ("  [green]ready to apply[/green]" if rc == 0 else "  [red]plan failed[/red]")
+            + (
+                "  [green]ready to apply[/green]"
+                if rc == 0
+                else "  [red]plan failed[/red]"
+            )
         )
         if rc == 0:
             self.query_one("#apply", Button).disabled = False
@@ -156,7 +162,9 @@ class ApplyScreen(Screen):
 
     async def _capture_outputs(self, log: RichLog) -> None:
         rc, out, _err = await run_capture(
-            ["terraform", "output", "-json"], cwd=str(self._terraform_dir()), timeout=30.0
+            ["terraform", "output", "-json"],
+            cwd=str(self._terraform_dir()),
+            timeout=30.0,
         )
         if rc != 0:
             log.write("[red]terraform output -json failed; outputs not captured[/red]")
@@ -174,7 +182,9 @@ class ApplyScreen(Screen):
         self.app.state.cluster_name = _v("cluster_name")
         self.app.state.web_service_name = _v("web_service_name")
         self.app.state.worker_service_name = _v("worker_service_name")
-        self.app.state.migrate_task_definition_family = _v("migrate_task_definition_family")
+        self.app.state.migrate_task_definition_family = _v(
+            "migrate_task_definition_family"
+        )
         self.app.state.alb_dns_name = _v("alb_dns_name")
         self.app.state.secrets_kms_key_arn = _v("secrets_kms_key_arn")
         self.app.state.rds_master_secret_arn = _v("rds_master_secret_arn")

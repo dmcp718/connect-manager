@@ -70,7 +70,7 @@ def _encode_value(v: Any) -> str:
         return str(v)
     if isinstance(v, list):
         return "[" + ", ".join(_encode_value(x) for x in v) + "]"
-    return f"\"{v}\""
+    return f'"{v}"'
 
 
 def write(path: Path, values: dict[str, Any]) -> None:

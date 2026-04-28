@@ -175,7 +175,10 @@ class ActivityLogger:
             message=f"Connected to filespace '{filespace_name}' with {datastore_count} DataStore(s)",
             user_id=user_id,
             level=cls.SUCCESS,
-            details={"filespace_name": filespace_name, "datastore_count": datastore_count},
+            details={
+                "filespace_name": filespace_name,
+                "datastore_count": datastore_count,
+            },
             ip_address=ip_address,
         )
 
@@ -195,7 +198,11 @@ class ActivityLogger:
             message=f"Created DataStore '{datastore_name}' for bucket '{bucket}' in filespace '{filespace_name}'",
             user_id=user_id,
             level=cls.SUCCESS,
-            details={"datastore_name": datastore_name, "bucket": bucket, "filespace_name": filespace_name},
+            details={
+                "datastore_name": datastore_name,
+                "bucket": bucket,
+                "filespace_name": filespace_name,
+            },
             related_type="datastore",
             ip_address=ip_address,
         )
@@ -286,7 +293,11 @@ class ActivityLogger:
             message=message,
             user_id=user_id,
             level=level,
-            details={"completed": completed, "failed": failed, "duration_seconds": duration_seconds},
+            details={
+                "completed": completed,
+                "failed": failed,
+                "duration_seconds": duration_seconds,
+            },
             related_id=str(job_id),
             related_type="job",
         )
@@ -489,7 +500,11 @@ class ActivityLogger:
                 message=f"Failed to process S3 event for '{object_key}' from queue '{queue_name}': {error}",
                 user_id=user_id,
                 level=cls.ERROR,
-                details={"object_key": object_key, "queue_name": queue_name, "error": error},
+                details={
+                    "object_key": object_key,
+                    "queue_name": queue_name,
+                    "error": error,
+                },
                 related_id=queue_id,
                 related_type="queue",
             )
@@ -591,7 +606,11 @@ class ActivityLogger:
             message=f"Created {role} account for '{new_user_email}'",
             user_id=admin_id,
             level=cls.SUCCESS,
-            details={"new_user_email": new_user_email, "new_user_id": new_user_id, "is_admin": is_admin},
+            details={
+                "new_user_email": new_user_email,
+                "new_user_id": new_user_id,
+                "is_admin": is_admin,
+            },
             related_id=new_user_id,
             related_type="user",
             ip_address=ip_address,
@@ -612,7 +631,10 @@ class ActivityLogger:
             message=f"Deleted user account '{deleted_email}'",
             user_id=admin_id,
             level=cls.WARNING,
-            details={"deleted_email": deleted_email, "deleted_user_id": deleted_user_id},
+            details={
+                "deleted_email": deleted_email,
+                "deleted_user_id": deleted_user_id,
+            },
             related_id=deleted_user_id,
             related_type="user",
             ip_address=ip_address,
@@ -654,7 +676,11 @@ class ActivityLogger:
             message=f"Changed role for '{target_email}' to {new_role}",
             user_id=admin_id,
             level=cls.INFO,
-            details={"target_email": target_email, "target_user_id": target_user_id, "new_role": new_role},
+            details={
+                "target_email": target_email,
+                "target_user_id": target_user_id,
+                "new_role": new_role,
+            },
             related_id=target_user_id,
             related_type="user",
             ip_address=ip_address,

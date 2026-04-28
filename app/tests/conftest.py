@@ -28,7 +28,12 @@ def postgres_container() -> Iterator[str]:
         repo_root = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
-        env = {**os.environ, "DATABASE_URL": sync_url.replace("postgresql://", "postgresql+psycopg://", 1)}
+        env = {
+            **os.environ,
+            "DATABASE_URL": sync_url.replace(
+                "postgresql://", "postgresql+psycopg://", 1
+            ),
+        }
         subprocess.run(
             ["uv", "run", "alembic", "upgrade", "head"],
             cwd=repo_root,
