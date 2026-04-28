@@ -18,6 +18,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import User
+from db.repositories.datastore import DatastoreCredentialsRepository
 from db.repositories.job import JobRepository
 from db.repositories.user import UserRepository
 from services.lucidlink import LucidLinkClient, LL_HOST
@@ -35,6 +36,11 @@ from routes.auth import router as auth_router, get_current_user_optional
 from routes.health import router as health_router
 from middleware.auth import AuthMiddleware
 from middleware.metrics import PrometheusMiddleware
+
+
+def _parse_uid(user_id: Optional[str]) -> Optional[uuid.UUID]:
+    """Convert request.state.user_id (str|None) to UUID for repo calls."""
+    return uuid.UUID(user_id) if user_id else None
 
 
 async def _startup() -> None:
@@ -124,18 +130,23 @@ async def login_page(request: Request):
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
+async def index(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
     """Main page."""
     state = get_session_from_request(request)
     browsable_datastores = state.get_browsable_datastores()
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
+    ds_repo = DatastoreCredentialsRepository(session)
 
     # Build datastores data for list view
     datastores_data = []
     for name, ds in state.datastores.items():
         s3_params = ds.get("s3StorageParams", {})
         ds_id = ds.get("id")
-        has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
+        has_creds = await ds_repo.get_for_datastore_user(ds_id, parsed_uid) is not None
         datastores_data.append(
             {
                 "id": ds_id,
@@ -176,6 +187,7 @@ async def load_filespaces(
     request: Request,
     token: str = Form(...),
     api_host: Optional[str] = Form(None),
+    session: AsyncSession = Depends(get_db),
 ):
     """Load filespaces from LucidLink API and auto-load datastores for first filespace."""
     state = get_session_from_request(request)
@@ -220,6 +232,8 @@ async def load_filespaces(
         )
 
         state.datastores = {}
+        ds_repo = DatastoreCredentialsRepository(session)
+        parsed_uid = _parse_uid(user_id)
         for ds in ds_result:
             ds_id = ds.get("id")
             ds_name = ds.get("name", ds_id)
@@ -227,7 +241,9 @@ async def load_filespaces(
             # Extract bucket info for display
             s3_params = ds.get("s3StorageParams", {})
             # Check if user has credentials for this datastore
-            has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
+            has_creds = (
+                await ds_repo.get_for_datastore_user(ds_id, parsed_uid) is not None
+            )
             datastores_data.append(
                 {
                     "id": ds_id,
@@ -259,7 +275,11 @@ async def load_filespaces(
 
 
 @app.post("/api/load-datastores", response_class=HTMLResponse)
-async def load_datastores(request: Request, filespace: str = Form(...)):
+async def load_datastores(
+    request: Request,
+    filespace: str = Form(...),
+    session: AsyncSession = Depends(get_db),
+):
     """Load datastores for selected filespace - returns list view."""
     state = get_session_from_request(request)
     if filespace not in state.filespaces:
@@ -282,6 +302,8 @@ async def load_datastores(request: Request, filespace: str = Form(...)):
     state.datastores = {}
     datastores_data = []
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
+    ds_repo = DatastoreCredentialsRepository(session)
     for ds in result:
         ds_id = ds.get("id")
         ds_name = ds.get("name", ds_id)
@@ -289,7 +311,7 @@ async def load_datastores(request: Request, filespace: str = Form(...)):
         # Extract bucket info for display
         s3_params = ds.get("s3StorageParams", {})
         # Check if user has credentials for this datastore
-        has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
+        has_creds = await ds_repo.get_for_datastore_user(ds_id, parsed_uid) is not None
         datastores_data.append(
             {
                 "id": ds_id,
@@ -315,6 +337,7 @@ async def load_datastores(request: Request, filespace: str = Form(...)):
 async def connect(
     request: Request,
     datastore: str = Form(...),
+    session: AsyncSession = Depends(get_db),
 ):
     """Connect to a DataStore - show credentials modal if needed."""
     state = get_session_from_request(request)
@@ -332,7 +355,10 @@ async def connect(
 
         # Check if we already have credentials for this DataStore (user-specific)
         user_id = getattr(request.state, "user_id", None)
-        existing_creds = db.get_datastore_credentials(datastore_id, user_id=user_id)
+        ds_repo = DatastoreCredentialsRepository(session)
+        existing_creds = await ds_repo.get_for_datastore_user(
+            datastore_id, _parse_uid(user_id)
+        )
         if existing_creds:
             # Already have credentials - go directly to browser
             state.selected_datastore = datastore
@@ -558,9 +584,14 @@ async def datastore_info(request: Request, datastore_id: str):
 
 
 @app.delete("/api/datastores/{datastore_id}", response_class=HTMLResponse)
-async def delete_datastore(request: Request, datastore_id: str):
+async def delete_datastore(
+    request: Request,
+    datastore_id: str,
+    session: AsyncSession = Depends(get_db),
+):
     """Delete DataStore from LucidLink."""
     state = get_session_from_request(request)
+    ds_repo = DatastoreCredentialsRepository(session)
     # Find filespace_id for this datastore
     filespace_id = None
     ds_name = None
@@ -590,10 +621,13 @@ async def delete_datastore(request: Request, datastore_id: str):
         # Return current list with error
         datastores_data = []
         user_id = getattr(request.state, "user_id", None)
+        parsed_uid = _parse_uid(user_id)
         for name, ds in state.datastores.items():
             s3_params = ds.get("s3StorageParams", {})
             ds_id = ds.get("id")
-            has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
+            has_creds = (
+                await ds_repo.get_for_datastore_user(ds_id, parsed_uid) is not None
+            )
             datastores_data.append(
                 {
                     "id": ds_id,
@@ -626,10 +660,11 @@ async def delete_datastore(request: Request, datastore_id: str):
 
     # Return updated list
     datastores_data = []
+    parsed_uid = _parse_uid(user_id)
     for name, ds in state.datastores.items():
         s3_params = ds.get("s3StorageParams", {})
         ds_id = ds.get("id")
-        has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
+        has_creds = await ds_repo.get_for_datastore_user(ds_id, parsed_uid) is not None
         datastores_data.append(
             {
                 "id": ds_id,
@@ -675,6 +710,7 @@ async def create_datastore(
     endpoint: Optional[str] = Form(None),
     use_virtual_addressing: Optional[str] = Form(None),
     url_expiration_minutes: Optional[int] = Form(10080),
+    session: AsyncSession = Depends(get_db),
 ):
     """Create a new S3 datastore in LucidLink and save credentials locally."""
     state = get_session_from_request(request)
@@ -740,6 +776,8 @@ async def create_datastore(
         datastores_data = []
         new_datastore_id = None
         user_id = getattr(request.state, "user_id", None)
+        parsed_uid = _parse_uid(user_id)
+        ds_repo = DatastoreCredentialsRepository(session)
 
         for ds in datastores:
             ds_id = ds.get("id")
@@ -749,7 +787,7 @@ async def create_datastore(
             # For newly created datastore, credentials will be saved below
             # For others, check existing credentials
             has_creds = (ds_name == name) or (
-                db.get_datastore_credentials(ds_id, user_id=user_id) is not None
+                await ds_repo.get_for_datastore_user(ds_id, parsed_uid) is not None
             )
             datastores_data.append(
                 {
@@ -1194,11 +1232,16 @@ async def clear_logs(request: Request):
 
 
 @app.get("/api/tab/settings", response_class=HTMLResponse)
-async def tab_settings(request: Request):
+async def tab_settings(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
     """Return settings tab content."""
     state = get_session_from_request(request)
     browsable_datastores = state.get_browsable_datastores()
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
+    ds_repo = DatastoreCredentialsRepository(session)
 
     # Build datastores data for list view
     datastores_data = []
@@ -1206,7 +1249,7 @@ async def tab_settings(request: Request):
         s3_params = ds.get("s3StorageParams", {})
         ds_id = ds.get("id")
         # Check if user has credentials for this datastore
-        has_creds = db.get_datastore_credentials(ds_id, user_id=user_id) is not None
+        has_creds = await ds_repo.get_for_datastore_user(ds_id, parsed_uid) is not None
         datastores_data.append(
             {
                 "id": ds_id,
@@ -1512,15 +1555,20 @@ async def tab_account(
 
 
 @app.get("/api/tab/sqs", response_class=HTMLResponse)
-async def tab_sqs(request: Request):
+async def tab_sqs(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
     """Return SQS tab content."""
     state = get_session_from_request(request)
 
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
     sqs_credentials = db.get_sqs_credentials(user_id=user_id)
     sqs_queues = db.list_sqs_queues(user_id=user_id)
     sqs_events = db.list_sqs_events(limit=20, user_id=user_id)
     browsable_datastores = state.get_browsable_datastores()
+    ds_repo = DatastoreCredentialsRepository(session)
 
     # Get event count for each queue and add datastore names
     for queue in sqs_queues:
@@ -1528,10 +1576,12 @@ async def tab_sqs(request: Request):
             queue["id"], user_id=user_id
         )
         # Look up datastore name
-        ds_cred = db.get_datastore_credentials(queue["datastore_id"], user_id=user_id)
+        ds_cred = await ds_repo.get_for_datastore_user(
+            queue["datastore_id"], parsed_uid
+        )
         if ds_cred:
-            queue["datastore_name"] = ds_cred.get("datastore_name", "")
-            queue["filespace_name"] = ds_cred.get("filespace_name", "")
+            queue["datastore_name"] = ds_cred.datastore_name or ""
+            queue["filespace_name"] = ds_cred.filespace_name or ""
 
     return templates.TemplateResponse(
         "partials/sqs_tab.html",
@@ -1550,13 +1600,15 @@ async def save_sqs_credentials(
     request: Request,
     access_key: str = Form(...),
     secret_key: Optional[str] = Form(None),
+    session: AsyncSession = Depends(get_db),
 ):
     """Save SQS IAM credentials."""
     state = get_session_from_request(request)
     from services import secrets as sec
-    import uuid
 
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
+    ds_repo = DatastoreCredentialsRepository(session)
 
     try:
         # Get existing credentials if updating
@@ -1588,11 +1640,11 @@ async def save_sqs_credentials(
             queue["events_today"] = db.get_sqs_event_count_today(
                 queue["id"], user_id=user_id
             )
-            ds_cred = db.get_datastore_credentials(
-                queue["datastore_id"], user_id=user_id
+            ds_cred = await ds_repo.get_for_datastore_user(
+                queue["datastore_id"], parsed_uid
             )
             if ds_cred:
-                queue["datastore_name"] = ds_cred.get("datastore_name", "")
+                queue["datastore_name"] = ds_cred.datastore_name or ""
 
         return templates.TemplateResponse(
             "partials/sqs_queue_list.html",
@@ -1721,15 +1773,17 @@ async def add_sqs_queue(
     datastore_id: str = Form(...),
     import_prefix: str = Form(""),
     configure_s3_policy: Optional[str] = Form(None),
+    session: AsyncSession = Depends(get_db),
 ):
     """Add or create a new SQS queue configuration."""
     state = get_session_from_request(request)
     from services import secrets as sec
     from services.sqs_service import SQSService, SQSError
-    import uuid
 
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
     browsable_datastores = state.get_browsable_datastores()
+    ds_repo = DatastoreCredentialsRepository(session)
 
     try:
         # Get SQS credentials
@@ -1745,14 +1799,14 @@ async def add_sqs_queue(
             raise ValueError("Invalid SQS credentials")
 
         # Get DataStore credentials to validate and get bucket name
-        ds_cred = db.get_datastore_credentials(datastore_id, user_id=user_id)
+        ds_cred = await ds_repo.get_for_datastore_user(datastore_id, parsed_uid)
         if not ds_cred:
             raise ValueError(
                 "DataStore credentials not found. Please add credentials in Settings first."
             )
 
-        filespace_id = ds_cred.get("filespace_id", "")
-        bucket_name = ds_cred.get("bucket_name", "")
+        filespace_id = ds_cred.filespace_id or ""
+        bucket_name = ds_cred.bucket_name or ""
 
         if mode == "create":
             # Use selected region for new queue
@@ -1856,9 +1910,11 @@ async def add_sqs_queue(
             queue["events_today"] = db.get_sqs_event_count_today(
                 queue["id"], user_id=user_id
             )
-            cred = db.get_datastore_credentials(queue["datastore_id"], user_id=user_id)
+            cred = await ds_repo.get_for_datastore_user(
+                queue["datastore_id"], parsed_uid
+            )
             if cred:
-                queue["datastore_name"] = cred.get("datastore_name", "")
+                queue["datastore_name"] = cred.datastore_name or ""
 
         return templates.TemplateResponse(
             "partials/sqs_queue_list.html",
@@ -1892,7 +1948,11 @@ async def add_sqs_queue(
 
 
 @app.delete("/api/sqs/queues/{queue_id}", response_class=HTMLResponse)
-async def delete_sqs_queue(request: Request, queue_id: str):
+async def delete_sqs_queue(
+    request: Request,
+    queue_id: str,
+    session: AsyncSession = Depends(get_db),
+):
     """Delete an SQS queue configuration and clean up AWS resources."""
     state = get_session_from_request(request)
     from services import secrets as sec
@@ -1904,6 +1964,8 @@ async def delete_sqs_queue(request: Request, queue_id: str):
     )
 
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
+    ds_repo = DatastoreCredentialsRepository(session)
 
     queue = db.get_sqs_queue(queue_id, user_id=user_id)
     if not queue:
@@ -1912,9 +1974,9 @@ async def delete_sqs_queue(request: Request, queue_id: str):
         browsable_datastores = state.get_browsable_datastores()
         for q in sqs_queues:
             q["events_today"] = db.get_sqs_event_count_today(q["id"], user_id=user_id)
-            cred = db.get_datastore_credentials(q["datastore_id"], user_id=user_id)
+            cred = await ds_repo.get_for_datastore_user(q["datastore_id"], parsed_uid)
             if cred:
-                q["datastore_name"] = cred.get("datastore_name", "")
+                q["datastore_name"] = cred.datastore_name or ""
         return templates.TemplateResponse(
             "partials/sqs_queue_list.html",
             {
@@ -1944,9 +2006,9 @@ async def delete_sqs_queue(request: Request, queue_id: str):
         if access_key and secret_key:
             # 1. Remove S3 bucket notification
             if queue_arn and datastore_id:
-                ds_cred = db.get_datastore_credentials(datastore_id, user_id=user_id)
+                ds_cred = await ds_repo.get_for_datastore_user(datastore_id, parsed_uid)
                 if ds_cred:
-                    bucket_name = ds_cred.get("bucket_name")
+                    bucket_name = ds_cred.bucket_name
                     if bucket_name:
                         try:
                             s3_notif = S3NotificationService(
@@ -1986,9 +2048,9 @@ async def delete_sqs_queue(request: Request, queue_id: str):
 
     for q in sqs_queues:
         q["events_today"] = db.get_sqs_event_count_today(q["id"], user_id=user_id)
-        cred = db.get_datastore_credentials(q["datastore_id"], user_id=user_id)
+        cred = await ds_repo.get_for_datastore_user(q["datastore_id"], parsed_uid)
         if cred:
-            q["datastore_name"] = cred.get("datastore_name", "")
+            q["datastore_name"] = cred.datastore_name or ""
 
     return templates.TemplateResponse(
         "partials/sqs_queue_list.html",
@@ -2003,10 +2065,15 @@ async def delete_sqs_queue(request: Request, queue_id: str):
 
 
 @app.post("/api/sqs/queues/{queue_id}/pause", response_class=HTMLResponse)
-async def pause_sqs_queue(request: Request, queue_id: str):
+async def pause_sqs_queue(
+    request: Request,
+    queue_id: str,
+    session: AsyncSession = Depends(get_db),
+):
     """Pause polling for a queue."""
     state = get_session_from_request(request)
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
     db.update_sqs_queue(queue_id, status="paused", user_id=user_id)
 
     queue = db.get_sqs_queue(queue_id, user_id=user_id)
@@ -2016,12 +2083,13 @@ async def pause_sqs_queue(request: Request, queue_id: str):
     # Return updated queue list
     sqs_queues = db.list_sqs_queues(user_id=user_id)
     browsable_datastores = state.get_browsable_datastores()
+    ds_repo = DatastoreCredentialsRepository(session)
 
     for q in sqs_queues:
         q["events_today"] = db.get_sqs_event_count_today(q["id"], user_id=user_id)
-        cred = db.get_datastore_credentials(q["datastore_id"], user_id=user_id)
+        cred = await ds_repo.get_for_datastore_user(q["datastore_id"], parsed_uid)
         if cred:
-            q["datastore_name"] = cred.get("datastore_name", "")
+            q["datastore_name"] = cred.datastore_name or ""
 
     return templates.TemplateResponse(
         "partials/sqs_queue_list.html",
@@ -2035,10 +2103,15 @@ async def pause_sqs_queue(request: Request, queue_id: str):
 
 
 @app.post("/api/sqs/queues/{queue_id}/resume", response_class=HTMLResponse)
-async def resume_sqs_queue(request: Request, queue_id: str):
+async def resume_sqs_queue(
+    request: Request,
+    queue_id: str,
+    session: AsyncSession = Depends(get_db),
+):
     """Resume polling for a queue."""
     state = get_session_from_request(request)
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
     db.update_sqs_queue(queue_id, status="active", error_message="", user_id=user_id)
 
     queue = db.get_sqs_queue(queue_id, user_id=user_id)
@@ -2048,12 +2121,13 @@ async def resume_sqs_queue(request: Request, queue_id: str):
     # Return updated queue list
     sqs_queues = db.list_sqs_queues(user_id=user_id)
     browsable_datastores = state.get_browsable_datastores()
+    ds_repo = DatastoreCredentialsRepository(session)
 
     for q in sqs_queues:
         q["events_today"] = db.get_sqs_event_count_today(q["id"], user_id=user_id)
-        cred = db.get_datastore_credentials(q["datastore_id"], user_id=user_id)
+        cred = await ds_repo.get_for_datastore_user(q["datastore_id"], parsed_uid)
         if cred:
-            q["datastore_name"] = cred.get("datastore_name", "")
+            q["datastore_name"] = cred.datastore_name or ""
 
     return templates.TemplateResponse(
         "partials/sqs_queue_list.html",
@@ -2067,13 +2141,18 @@ async def resume_sqs_queue(request: Request, queue_id: str):
 
 
 @app.get("/api/sqs/queues/{queue_id}/info", response_class=HTMLResponse)
-async def sqs_queue_info(request: Request, queue_id: str):
+async def sqs_queue_info(
+    request: Request,
+    queue_id: str,
+    session: AsyncSession = Depends(get_db),
+):
     """Get queue details and statistics."""
     _ = get_session_from_request(request)  # Verify authenticated
     from services import secrets as sec
     from services.sqs_service import SQSService
 
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
 
     queue = db.get_sqs_queue(queue_id, user_id=user_id)
     if not queue:
@@ -2089,10 +2168,11 @@ async def sqs_queue_info(request: Request, queue_id: str):
     queue["events_today"] = db.get_sqs_event_count_today(queue_id, user_id=user_id)
 
     # Add datastore name
-    cred = db.get_datastore_credentials(queue["datastore_id"], user_id=user_id)
+    ds_repo = DatastoreCredentialsRepository(session)
+    cred = await ds_repo.get_for_datastore_user(queue["datastore_id"], parsed_uid)
     if cred:
-        queue["datastore_name"] = cred.get("datastore_name", "")
-        queue["filespace_name"] = cred.get("filespace_name", "")
+        queue["datastore_name"] = cred.datastore_name or ""
+        queue["filespace_name"] = cred.filespace_name or ""
 
     # Try to get current queue stats from AWS
     try:
