@@ -56,15 +56,15 @@ variable "web_port" {
 }
 
 variable "web_cpu" {
-  description = "Web container vCPU units (1024 = 1 vCPU). Sets the task-level cpu when summed with the sidecar."
+  description = "Web container vCPU units (1024 = 1 vCPU). Sets the task-level cpu when summed with the sidecar. Default 768 + sidecar 256 = 1024 task cpu, paired with 2048 MB memory -- one of the valid Fargate cpu/memory combos."
   type        = number
-  default     = 512
+  default     = 768
 }
 
 variable "web_memory" {
-  description = "Web container memory MiB. Sets the task-level memory when summed with the sidecar."
+  description = "Web container memory MiB. Sets the task-level memory when summed with the sidecar. Default 1536 + sidecar 512 = 2048 task memory."
   type        = number
-  default     = 1024
+  default     = 1536
 }
 
 variable "lucidlink_api_cpu" {

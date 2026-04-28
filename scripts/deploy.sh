@@ -39,6 +39,11 @@
 set -euo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
+# Export so every aws CLI call below picks up the right region without
+# needing --region on every invocation. ~/.aws/config might point at a
+# different region than the operator's deployed stack.
+export AWS_DEFAULT_REGION="$REGION"
+export AWS_REGION="$REGION"
 CLUSTER="${CLUSTER_NAME:-connect-prod}"
 WEB_SERVICE="${WEB_SERVICE:-connect-prod-web}"
 WORKER_SERVICE="${WORKER_SERVICE:-connect-prod-worker}"

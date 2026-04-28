@@ -38,10 +38,18 @@ resource "aws_ecs_task_definition" "migrate" {
       cpu       = var.cpu
       memory    = var.memory
 
-      command = var.command
+      # alembic.ini ships at /migrations/alembic.ini with `script_location =
+      # alembic` (relative). Run from /migrations so the relative path
+      # resolves to /migrations/alembic, and put /app on PYTHONPATH so
+      # alembic/env.py's `from db.models import Base` works.
+      workingDirectory = "/migrations"
+      command          = var.command
 
-      environment = local.environment
-      secrets     = local.secrets
+      environment = concat(
+        local.environment,
+        [{ name = "PYTHONPATH", value = "/app" }],
+      )
+      secrets = local.secrets
 
       logConfiguration = {
         logDriver = "awslogs"

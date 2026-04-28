@@ -17,7 +17,13 @@ target_metadata = Base.metadata
 
 _env_url = os.environ.get("DATABASE_URL")
 if _env_url:
-    config.set_main_option("sqlalchemy.url", _env_url)
+    # The web/worker apps use postgresql+asyncpg for async runtime. Alembic
+    # runs migrations synchronously, so swap to the sync psycopg driver
+    # (already in the image's deps via `psycopg[binary]`). Also escape any
+    # literal `%` in the password so configparser's BasicInterpolation
+    # doesn't try to expand `%foo` as a variable reference.
+    sync_url = _env_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    config.set_main_option("sqlalchemy.url", sync_url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:

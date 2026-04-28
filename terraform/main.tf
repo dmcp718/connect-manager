@@ -186,7 +186,7 @@ resource "aws_security_group" "web_tasks" {
 
 resource "aws_security_group" "worker_tasks" {
   name        = "connect-${var.env}-worker-tasks"
-  description = "Worker Fargate tasks. Egress only — workers don't accept inbound."
+  description = "Worker Fargate tasks. Egress only (no ingress)."
   vpc_id      = module.vpc.vpc_id
 
   egress {

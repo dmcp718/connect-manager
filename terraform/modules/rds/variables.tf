@@ -14,15 +14,15 @@ variable "security_group_ids" {
 }
 
 variable "db_name" {
-  description = "Name of the initial database created on the instance."
+  description = "Name of the initial database created on the instance. 'connect' (the obvious default) is a Postgres reserved word and rejected by RDS, so we use 'connectdb'."
   type        = string
-  default     = "connect"
+  default     = "connectdb"
 }
 
 variable "username" {
   description = "Master username for the RDS instance."
   type        = string
-  default     = "connect"
+  default     = "connectadmin"
 }
 
 variable "instance_class" {
@@ -44,9 +44,9 @@ variable "multi_az" {
 }
 
 variable "engine_version" {
-  description = "Postgres engine version. Pinned to a minor version; review on major Postgres releases."
+  description = "Postgres engine version. Pinned to a minor version; review when AWS retires the version."
   type        = string
-  default     = "16.4"
+  default     = "16.13"
 }
 
 variable "kms_key_id" {

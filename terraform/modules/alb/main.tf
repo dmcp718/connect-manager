@@ -6,7 +6,7 @@ locals {
 
 resource "aws_security_group" "alb" {
   name        = "connect-${var.name}-alb"
-  description = "Internet-facing ALB for connect-${var.name}. 80 → 443 redirect; 443 → web target group."
+  description = "Internet-facing ALB for connect-${var.name}. 80 to 443 redirect; 443 to web target group."
   vpc_id      = var.vpc_id
 
   ingress {

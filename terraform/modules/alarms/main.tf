@@ -176,7 +176,7 @@ resource "aws_cloudwatch_metric_alarm" "elasticache_cpu_high" {
 
 resource "aws_cloudwatch_metric_alarm" "worker_queue_depth_high" {
   alarm_name          = "connect-worker-queue-depth-high"
-  alarm_description   = "ARQ queue depth exceeded 100 for 15 minutes (KEDA isn't keeping up)."
+  alarm_description   = "ARQ queue depth exceeded 100 for 15 minutes (autoscaling not keeping up)."
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 3
   metric_name         = "queue_depth"

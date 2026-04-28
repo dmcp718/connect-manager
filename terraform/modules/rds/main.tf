@@ -27,7 +27,7 @@ resource "aws_db_subnet_group" "this" {
 resource "aws_db_parameter_group" "this" {
   name        = "connect-${var.name}-pg16"
   family      = "postgres16"
-  description = "connect-${var.name} Postgres 16 — TLS required"
+  description = "connect-${var.name} Postgres 16 -- TLS required"
 
   parameter {
     name         = "rds.force_ssl"
