@@ -12,7 +12,7 @@ Self-contained Terraform module that provisions an RDS Postgres 16 instance with
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `name` | `string` | required | Deployment name — used in resource names, tags, and the Secrets Manager path `connect/<name>/db`. |
+| `name` | `string` | required | Deployment name — used in resource names, tags, and the Secrets Manager path `/connect/<name>/db`. |
 | `subnet_ids` | `list(string)` | required | Private subnet IDs for the DB subnet group (must span ≥ 2 AZs). |
 | `security_group_ids` | `list(string)` | required | Security group IDs attached to the RDS instance. |
 | `db_name` | `string` | `"connect"` | Name of the initial database. |
@@ -37,7 +37,7 @@ Self-contained Terraform module that provisions an RDS Postgres 16 instance with
 
 ## Secret format
 
-The secret stored at `connect/<name>/db` is JSON:
+The secret stored at `/connect/<name>/db` is JSON:
 
 ```json
 {
@@ -70,6 +70,6 @@ spec:
   data:
     - secretKey: DATABASE_URL
       remoteRef:
-        key: connect/prod/db      # = master_secret_name output
+        key: /connect/prod/db     # = master_secret_name output
         property: url
 ```

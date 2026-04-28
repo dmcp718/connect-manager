@@ -53,11 +53,11 @@ resource "random_password" "master" {
 # ---------------------------------------------------------------------------
 
 resource "aws_secretsmanager_secret" "master" {
-  name        = "connect/${var.name}/db"
+  name        = "/connect/${var.name}/db"
   description = "connect-${var.name} RDS master credentials"
   kms_key_id  = local.kms_key_id
 
-  tags = merge(local.tags, { Name = "connect/${var.name}/db" })
+  tags = merge(local.tags, { Name = "/connect/${var.name}/db" })
 }
 
 resource "aws_secretsmanager_secret_version" "master" {

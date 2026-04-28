@@ -12,7 +12,7 @@ This module uses `family = "valkey8"`, which requires the AWS Terraform provider
 
 ## Secret schema
 
-The Secrets Manager secret at `connect/<name>/valkey` contains:
+The Secrets Manager secret at `/connect/<name>/valkey` contains:
 
 ```json
 {

@@ -40,15 +40,12 @@ the default `name_prefix = "/connect/prod"` this produces:
 |---|---|---|
 | `jwt` | `/connect/prod/jwt` | this module |
 | `admin` | `/connect/prod/admin` | this module |
-| `db` | `connect/<rds-name>/db` | `terraform/modules/rds` |
-| `valkey-auth` | `connect/<elc-name>/valkey` | `terraform/modules/elasticache` |
+| `db` | `/connect/<rds-name>/db` | `terraform/modules/rds` |
+| `valkey-auth` | `/connect/<elc-name>/valkey` | `terraform/modules/elasticache` |
 
-Note the slash inconsistency on the rds/elasticache side (`connect/...`,
-no leading slash, includes the resource short-name segment instead of
-`<env>`). That is a pre-existing artifact of those modules and is **not**
-modified here — those secret names are already wired into ESO
-ExternalSecret references downstream and renaming would be a separate,
-coordinated change.
+The rds/elasticache modules use the resource short-name (`<rds-name>` /
+`<elc-name>`) rather than `<env>` directly, but the leading-slash
+convention is consistent across all four secrets.
 
 ## Operator workflow — seeding values
 
@@ -141,7 +138,7 @@ module "rds" {
   source = "./modules/rds"
 
   # Share the same KMS key so /connect/prod/jwt, /connect/prod/admin,
-  # connect/<name>/db, and connect/<name>/valkey are all encrypted with
+  # /connect/<name>/db, and /connect/<name>/valkey are all encrypted with
   # alias/connect-secrets.
   kms_key_id = module.secrets.kms_key_arn
   # ...

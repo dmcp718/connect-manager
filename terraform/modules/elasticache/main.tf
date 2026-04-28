@@ -50,11 +50,11 @@ resource "random_password" "this" {
 # ---------------------------------------------------------------------------
 
 resource "aws_secretsmanager_secret" "valkey" {
-  name        = "connect/${var.name}/valkey"
+  name        = "/connect/${var.name}/valkey"
   description = "connect-${var.name} ElastiCache Valkey AUTH token and connection details"
   kms_key_id  = local.kms_key_id
 
-  tags = merge(local.tags, { Name = "connect/${var.name}/valkey" })
+  tags = merge(local.tags, { Name = "/connect/${var.name}/valkey" })
 }
 
 resource "aws_secretsmanager_secret_version" "valkey" {
