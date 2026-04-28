@@ -549,9 +549,12 @@ async def save_datastore_credentials(
     secret_key: str = Form(...),
     region: Optional[str] = Form(None),
     endpoint: Optional[str] = Form(None),
+    session: AsyncSession = Depends(get_db),
 ):
     """Save credentials for a DataStore."""
     state = get_session_from_request(request)
+    user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
     try:
         # Validate credentials by testing S3 connection
         s3_service = S3Service(
@@ -560,27 +563,38 @@ async def save_datastore_credentials(
             region=region or "us-east-1",
             endpoint_url=endpoint if endpoint else None,
         )
-
-        # Try to access the bucket
         await s3_service.head_bucket(bucket_name)
 
-        # Save credentials
-        state.save_datastore_for_browsing(
+        await state_helpers.save_datastore_credentials(
+            session,
             datastore_id=datastore_id,
             datastore_name=datastore_name,
             filespace_id=filespace_id,
             filespace_name=filespace_name,
             bucket_name=bucket_name,
+            access_key=access_key,
+            secret_key=secret_key,
             region=region,
             endpoint=endpoint,
-            aws_access_key=access_key,
-            aws_secret_key=secret_key,
+            user_id=parsed_uid,
         )
+        await session.commit()
 
+        # Update the in-memory UserSession cache so the browser tab picks
+        # up the new DataStore without re-querying Postgres on the next read.
+        state.datastore_credentials[datastore_id] = {
+            "datastore_id": datastore_id,
+            "datastore_name": datastore_name,
+            "filespace_id": filespace_id,
+            "filespace_name": filespace_name,
+            "bucket_name": bucket_name,
+            "region": region,
+            "endpoint": endpoint,
+        }
+        state.s3_services[datastore_id] = s3_service
         state.selected_datastore = datastore_name
-        state.save_connection(save_secrets=True)
+        state.log(f"Saved DataStore '{datastore_name}' for browsing")
 
-        # Return browser view
         return templates.TemplateResponse(
             "partials/browser.html",
             {
@@ -591,6 +605,7 @@ async def save_datastore_credentials(
         )
 
     except Exception as e:
+        await session.rollback()
         state.log(f"Failed to save credentials: {e}")
         return templates.TemplateResponse(
             "partials/connection_error.html",
@@ -602,11 +617,27 @@ async def save_datastore_credentials(
 
 
 @app.delete("/api/datastores/{datastore_id}/credentials", response_class=HTMLResponse)
-async def delete_datastore_credentials(request: Request, datastore_id: str):
+async def delete_datastore_credentials(
+    request: Request,
+    datastore_id: str,
+    session: AsyncSession = Depends(get_db),
+):
     """Remove credentials for a DataStore."""
     state = get_session_from_request(request)
-    state.remove_datastore_credentials(datastore_id)
-    return await tab_settings(request)
+    user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
+
+    deleted = await state_helpers.delete_datastore_credentials(
+        session, datastore_id, user_id=parsed_uid
+    )
+    await session.commit()
+
+    if deleted:
+        state.datastore_credentials.pop(datastore_id, None)
+        state.s3_services.pop(datastore_id, None)
+        state.log(f"Removed DataStore credentials for {datastore_id}")
+
+    return await tab_settings(request, session=session)
 
 
 # ============== DataStore Management API ==============
