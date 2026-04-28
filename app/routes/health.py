@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from typing import Any
 
 import boto3  # type: ignore[import-untyped]
@@ -124,11 +123,11 @@ async def readiness() -> Response:
         checks["postgres"] = msg
 
     # Valkey
-    valkey_host = os.environ.get("VALKEY_HOST", "localhost")
-    valkey_port = int(os.environ.get("VALKEY_PORT", "6379"))
+    from services.valkey import make_redis_client
+
     client: "redis.Redis | None" = None
     try:
-        client = redis.Redis(host=valkey_host, port=valkey_port, socket_timeout=2.0)
+        client = make_redis_client(socket_timeout=2.0)
         await asyncio.wait_for(client.ping(), timeout=2.0)
         checks["valkey"] = "ok"
     except Exception as exc:

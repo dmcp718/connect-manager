@@ -9,27 +9,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import uuid
 from typing import Any, Optional
 
-import redis.asyncio as redis
 from arq import create_pool
-from arq.connections import RedisSettings
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from db.repositories.job import JobRepository
 from services.logging import get_logger
+from services.valkey import arq_redis_settings, make_redis_client
 
 LOG_CHANNEL = "worker:logs"
 _log = get_logger("job_queue")
-
-
-def get_redis_settings() -> RedisSettings:
-    return RedisSettings(
-        host=os.getenv("VALKEY_HOST", "localhost"),
-        port=int(os.getenv("VALKEY_PORT", 6379)),
-    )
 
 
 class JobQueue:
@@ -48,7 +39,7 @@ class JobQueue:
     async def start(self) -> None:
         """Initialize connection to Valkey/Redis and start log subscriber."""
         try:
-            self._redis_pool = await create_pool(get_redis_settings())
+            self._redis_pool = await create_pool(arq_redis_settings())
             _log.info("Job queue connected to Valkey")
 
             await self._start_log_subscriber()
@@ -59,10 +50,7 @@ class JobQueue:
     async def _start_log_subscriber(self) -> None:
         """Subscribe to worker log channel."""
         try:
-            redis_client = redis.Redis(
-                host=os.getenv("VALKEY_HOST", "localhost"),
-                port=int(os.getenv("VALKEY_PORT", 6379)),
-            )
+            redis_client = make_redis_client()
             self._pubsub = redis_client.pubsub()
             await self._pubsub.subscribe(LOG_CHANNEL)
             self._subscriber_task = asyncio.create_task(self._listen_for_logs())

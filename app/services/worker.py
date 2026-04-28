@@ -13,7 +13,6 @@ import os
 from typing import Any, Optional
 
 from arq import cron
-from arq.connections import RedisSettings
 
 from db.repositories.job import JobRepository
 from services.database import get_sessionmaker, shutdown_engine
@@ -24,13 +23,7 @@ from services.s3_service import S3Service
 from services import secrets
 from services.sqs_poller import sqs_poll_cron
 from services.activity_logger import ActivityLogger
-
-
-def get_redis_settings() -> RedisSettings:
-    return RedisSettings(
-        host=os.getenv("VALKEY_HOST", "localhost"),
-        port=int(os.getenv("VALKEY_PORT", 6379)),
-    )
+from services.valkey import arq_redis_settings
 
 
 LOG_CHANNEL = "worker:logs"
@@ -347,7 +340,7 @@ class WorkerSettings:
     ]
     on_startup = on_startup
     on_shutdown = on_shutdown
-    redis_settings = get_redis_settings()
+    redis_settings = arq_redis_settings()
     max_jobs = int(os.getenv("ARQ_MAX_JOBS", 4))
     job_timeout = 3600
     keep_result = 3600

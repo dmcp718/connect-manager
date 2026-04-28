@@ -34,6 +34,7 @@ from routes.health import (
     db_pool_in_use,
 )
 from services.logging import get_logger
+from services.valkey import make_redis_client
 
 R = TypeVar("R")
 log = get_logger(__name__)
@@ -137,15 +138,16 @@ def start_metrics_sampler(
     if _sampler_task is not None and not _sampler_task.done():
         return _sampler_task
 
-    host = valkey_host or os.environ.get("VALKEY_HOST", "localhost")
-    port = valkey_port or int(os.environ.get("VALKEY_PORT", "6379"))
-
     try:
-        client: "redis.Redis" = redis.Redis(
-            host=host,
-            port=port,
-            socket_timeout=2.0,
-        )
+        if valkey_host is not None or valkey_port is not None:
+            # Caller passed an explicit override (test path) — honor it.
+            client: "redis.Redis" = redis.Redis(
+                host=valkey_host or os.environ.get("VALKEY_HOST", "localhost"),
+                port=valkey_port or int(os.environ.get("VALKEY_PORT", "6379")),
+                socket_timeout=2.0,
+            )
+        else:
+            client = make_redis_client(socket_timeout=2.0)
     except Exception as exc:
         log.warning("metrics sampler: redis init failed", extra={"error": str(exc)})
         return None
