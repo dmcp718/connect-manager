@@ -17,7 +17,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from db.models import User
 from db.repositories.job import JobRepository
+from db.repositories.user import UserRepository
 from services.lucidlink import LucidLinkClient, LL_HOST
 from services.s3_service import S3Service
 from services.user_state import UserSession, get_user_session
@@ -1454,24 +1456,53 @@ async def tab_help(request: Request):
     )
 
 
+def _user_to_template_dict(user: User) -> dict:
+    """Serialize a User ORM row to the dict shape account_tab.html expects.
+
+    The legacy SQLite-era contract returned `created_at` / `last_login` as
+    ISO-8601 strings (TEXT columns), and the template slices them with
+    `[:10]` to get the date prefix. CLAUDE.md rule #1 forbids touching
+    `app/templates/**`, so we preserve the string shape here at the
+    repo→view boundary.
+    """
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "display_name": user.display_name,
+        "is_admin": user.is_admin,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "last_login": user.last_login.isoformat() if user.last_login else None,
+    }
+
+
 @app.get("/api/tab/account", response_class=HTMLResponse)
-async def tab_account(request: Request):
+async def tab_account(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
     """Return account settings tab content."""
-    user_id = getattr(request.state, "user_id", None)
+    user_id_str = getattr(request.state, "user_id", None)
     is_admin = getattr(request.state, "is_admin", False)
 
-    # Get current user info
-    current_user = db.get_user_by_id(user_id) if user_id else None
+    repo = UserRepository(session)
 
-    # Get all users for admin view
-    users = db.list_users() if is_admin else []
+    current_user_dict = None
+    if user_id_str:
+        user = await repo.get(uuid.UUID(user_id_str))
+        if user is not None:
+            current_user_dict = _user_to_template_dict(user)
+
+    users_list: list[dict] = []
+    if is_admin:
+        rows = await repo.list(limit=1000, order_by=User.created_at)
+        users_list = [_user_to_template_dict(u) for u in rows]
 
     return templates.TemplateResponse(
         "partials/account_tab.html",
         {
             "request": request,
-            "current_user": current_user,
-            "users": users,
+            "current_user": current_user_dict,
+            "users": users_list,
             "is_admin": is_admin,
         },
     )
