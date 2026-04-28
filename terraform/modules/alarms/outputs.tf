@@ -4,7 +4,7 @@ output "sns_topic_arn" {
 }
 
 output "alarm_arns" {
-  description = "Map of alarm name → alarm ARN for every CloudWatch alarm created by this module. ALB-related alarms are present only when var.alb_arn_suffix is non-empty."
+  description = "Map of alarm name → alarm ARN for every CloudWatch alarm created by this module. ALB-related alarms are present only when var.create_alb_alarm is true."
   value = merge(
     {
       (aws_cloudwatch_metric_alarm.rds_cpu_high.alarm_name)            = aws_cloudwatch_metric_alarm.rds_cpu_high.arn
@@ -14,7 +14,7 @@ output "alarm_arns" {
       (aws_cloudwatch_metric_alarm.pod_restart_web.alarm_name)         = aws_cloudwatch_metric_alarm.pod_restart_web.arn
       (aws_cloudwatch_metric_alarm.pod_restart_worker.alarm_name)      = aws_cloudwatch_metric_alarm.pod_restart_worker.arn
     },
-    local.alb_alarm_enabled ? {
+    var.create_alb_alarm ? {
       (aws_cloudwatch_metric_alarm.alb_5xx_rate[0].alarm_name) = aws_cloudwatch_metric_alarm.alb_5xx_rate[0].arn
     } : {}
   )

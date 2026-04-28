@@ -13,7 +13,8 @@ through `var.sns_topic_subscription_email`.
 | `cluster_name` | `string` | — | EKS cluster name; ClusterName dimension on Container Insights metrics. |
 | `db_instance_id` | `string` | — | RDS DB instance identifier (DBInstanceIdentifier dimension). |
 | `cache_cluster_id` | `string` | — | ElastiCache replication group ID (ReplicationGroupId dimension). |
-| `alb_arn_suffix` | `string` | `""` | ALB metric dimension suffix `app/<lb-name>/<lb-id>`. Empty disables the ALB alarm. |
+| `alb_arn_suffix` | `string` | `""` | ALB metric dimension suffix `app/<lb-name>/<lb-id>`. Used only when `create_alb_alarm = true`. |
+| `create_alb_alarm` | `bool` | `true` | Whether to create the ALB 5xx-rate alarm. Set false in local/ministack tfvars (no ALB). Must be plan-time-known; a previous version derived it from `alb_arn_suffix != ""` but that's a module-output expression and broke `terraform plan`. |
 | `namespace` | `string` | `"connect"` | Kubernetes namespace for pod-restart alarms. |
 | `prometheus_namespace` | `string` | `"Connect/ARQ"` | CloudWatch namespace where the Prometheus bridge republishes `queue_depth`. |
 | `sns_topic_subscription_email` | `string` | `""` | If non-empty, subscribe this address to `connect-alerts`. |

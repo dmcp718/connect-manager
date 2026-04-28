@@ -1,9 +1,5 @@
 locals {
   tags = merge({ project = "connect" }, var.tags)
-
-  # Skip the ALB 5xx alarm when the caller hasn't provided the ARN suffix —
-  # e.g. local/ministack environments where the ingress isn't an ALB.
-  alb_alarm_enabled = var.alb_arn_suffix != ""
 }
 
 # ---------------------------------------------------------------------------
@@ -35,7 +31,7 @@ resource "aws_sns_topic_subscription" "email" {
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_metric_alarm" "alb_5xx_rate" {
-  count = local.alb_alarm_enabled ? 1 : 0
+  count = var.create_alb_alarm ? 1 : 0
 
   alarm_name          = "connect-alb-5xx-rate"
   alarm_description   = "ALB target 5xx error rate exceeded 1% over 5 minutes."

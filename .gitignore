@@ -43,7 +43,10 @@ docs/site/
 terraform/*.tfstate
 terraform/*.tfstate.backup
 terraform/terraform.tfvars
+terraform/local.tfvars
+terraform/local-ministack-override.tf
 terraform/crash.log
+terraform/modules/queue-metric/lambda/index.zip
 
 # Project-specific excludes
 brand_guidelines/

@@ -17,11 +17,22 @@ variable "alb_arn_suffix" {
   description = <<-EOT
     ALB metric dimension suffix in the form `app/<lb-name>/<lb-id>`. CloudWatch
     uses this as the `LoadBalancer` dimension on AWS/ApplicationELB metrics.
-    Leave empty to skip the ALB 5xx alarm (e.g. when the ingress isn't yet
-    provisioned in this environment).
+    Used only when `create_alb_alarm = true`.
   EOT
   type        = string
   default     = ""
+}
+
+variable "create_alb_alarm" {
+  description = <<-EOT
+    Whether to create the ALB 5xx-rate CloudWatch alarm. Default true on
+    aws-fargate since the ALB is always provisioned. Set false in local /
+    ministack tfvars to skip — the alarm's `count` must be a plan-time
+    constant, so it cannot be derived from `alb_arn_suffix` (a module
+    output, only known after apply).
+  EOT
+  type        = bool
+  default     = true
 }
 
 variable "namespace" {
