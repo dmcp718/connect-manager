@@ -113,3 +113,53 @@ async def shutdown_engine() -> None:
         _engine = None
         _sessionmaker = None
         log.info("Postgres engine disposed")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Legacy SQLite-era shim — REMOVE after awsk-opc follow-up beads convert all
+# `db.*` callers in app/services/{state,user_state,sqs_poller}.py and app/main.py
+# to async repository methods. Until then this catches every legacy call with
+# a shape-aware safe default so the app boots and serves requests cleanly,
+# while degraded codepaths log a warning per call.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_LEGACY_LIST_PREFIXES = ("list_", "get_all_")
+_LEGACY_BOOL_SUFFIXES = ("_exists",)
+_LEGACY_INT_PREFIXES = ("count_", "get_count_")
+
+
+def _legacy_default_for(name: str) -> Any:
+    """Pick a shape-appropriate default value based on the function name."""
+    if name.startswith(_LEGACY_LIST_PREFIXES):
+        return []
+    if name.startswith(_LEGACY_INT_PREFIXES):
+        return 0
+    if name.endswith(_LEGACY_BOOL_SUFFIXES):
+        return False
+    # Everything else (get_*, save_*, set_*, delete_*, init_*, create_*, update_*,
+    # mark_*, clear_*, …) returns None. Side-effect callers ignore it; readers
+    # that expected a row get None and handle it as "not found."
+    return None
+
+
+def __getattr__(name: str) -> Any:
+    """Module-level fallback for legacy `db.*` references.
+
+    Returns a callable that logs a warning and returns the shape-default for
+    `name`. Triggered only when a name isn't otherwise defined in this module
+    — engine/sessionmaker/get_db/shutdown_engine are unaffected.
+    """
+    if name.startswith("_"):
+        raise AttributeError(name)
+
+    default = _legacy_default_for(name)
+
+    def _legacy_stub(*args: Any, **kwargs: Any) -> Any:
+        log.warning(
+            "legacy db.%s called — returning safe default; convert to async repo",
+            name,
+            extra={"legacy_function": name, "default_returned": repr(default)},
+        )
+        return default
+
+    return _legacy_stub

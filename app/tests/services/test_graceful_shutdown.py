@@ -1,7 +1,11 @@
 """Subprocess-based integration test for SIGTERM graceful drain.
 
 Design notes:
-- Port 18765 is hardcoded to avoid the port-0 / discovery problem.
+- A fresh free port is picked per fixture run via socket.bind((host, 0)) so
+  consecutive tests don't collide on a TIME_WAIT / not-yet-released bind from
+  the previous subprocess. This is the awsk-ap6 fix — the prior hardcoded
+  port (18765) was reliably reused by the OS but flaked when subprocess
+  teardown raced the next subprocess startup.
 - GRACEFUL_DRAIN_SECONDS=3 keeps wall-clock time to ~5-8s total.
 - We spin up a minimal FastAPI app that only mounts the health router
   and uses ``graceful_lifespan`` — no database, no job queue, no auth.
@@ -15,6 +19,7 @@ from __future__ import annotations
 
 import os
 import signal
+import socket
 import subprocess
 import sys
 import textwrap
@@ -23,51 +28,64 @@ import time
 import httpx
 import pytest
 
-TEST_PORT = 18765
 DRAIN_SECONDS = 3
 STARTUP_TIMEOUT = 10.0
 DRAIN_FLIP_TIMEOUT = 2.0
 PROCESS_EXIT_TIMEOUT = DRAIN_SECONDS + 5
 
 
-APP_SRC = textwrap.dedent(
-    f"""\
-    import asyncio
-    import os
-    import sys
-
-    os.environ.setdefault("GRACEFUL_DRAIN_SECONDS", "{DRAIN_SECONDS}")
-
-    from fastapi import FastAPI
-    from routes.health import router as health_router
-    from services.shutdown import graceful_lifespan
-
-    async def _noop_startup() -> None:
-        pass
-
-    async def _noop_shutdown() -> None:
-        pass
-
-    async def lifespan(app: FastAPI):  # type: ignore[override]
-        async with graceful_lifespan(app, startup=_noop_startup, shutdown=_noop_shutdown):
-            yield
-
-    app = FastAPI(lifespan=lifespan)
-    app.include_router(health_router)
-
-    if __name__ == "__main__":
-        import uvicorn
-        uvicorn.run(app, host="127.0.0.1", port={TEST_PORT}, log_level="warning")
+def _find_free_port() -> int:
+    """Return an OS-assigned free port. There's a TOCTOU window between
+    close() and uvicorn's bind, but it's small enough that this is the
+    standard pattern for ephemeral test servers.
     """
-)
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
 
 
-def _wait_for_ready(timeout: float = STARTUP_TIMEOUT) -> None:
+def _build_app_src(port: int) -> str:
+    return textwrap.dedent(
+        f"""\
+        import asyncio
+        import os
+        import sys
+
+        os.environ.setdefault("GRACEFUL_DRAIN_SECONDS", "{DRAIN_SECONDS}")
+
+        from fastapi import FastAPI
+        from routes.health import router as health_router
+        from services.shutdown import graceful_lifespan
+
+        async def _noop_startup() -> None:
+            pass
+
+        async def _noop_shutdown() -> None:
+            pass
+
+        async def lifespan(app: FastAPI):  # type: ignore[override]
+            async with graceful_lifespan(app, startup=_noop_startup, shutdown=_noop_shutdown):
+                yield
+
+        app = FastAPI(lifespan=lifespan)
+        app.include_router(health_router)
+
+        if __name__ == "__main__":
+            import uvicorn
+            uvicorn.run(app, host="127.0.0.1", port={port}, log_level="warning")
+        """
+    )
+
+
+def _wait_for_ready(port: int, timeout: float = STARTUP_TIMEOUT) -> None:
     """Poll /health until the server responds 200 or timeout."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            r = httpx.get(f"http://127.0.0.1:{TEST_PORT}/health", timeout=1.0)
+            r = httpx.get(f"http://127.0.0.1:{port}/health", timeout=1.0)
             if r.status_code == 200:
                 return
         except httpx.TransportError:
@@ -76,12 +94,12 @@ def _wait_for_ready(timeout: float = STARTUP_TIMEOUT) -> None:
     raise TimeoutError(f"Server did not start within {timeout}s")
 
 
-def _poll_until_503(timeout: float = DRAIN_FLIP_TIMEOUT) -> None:
+def _poll_until_503(port: int, timeout: float = DRAIN_FLIP_TIMEOUT) -> None:
     """Poll /ready until it returns 503 or timeout."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            r = httpx.get(f"http://127.0.0.1:{TEST_PORT}/ready", timeout=1.0)
+            r = httpx.get(f"http://127.0.0.1:{port}/ready", timeout=1.0)
             if r.status_code == 503:
                 return
         except httpx.TransportError:
@@ -92,9 +110,14 @@ def _poll_until_503(timeout: float = DRAIN_FLIP_TIMEOUT) -> None:
 
 @pytest.fixture()
 def app_process(tmp_path):  # type: ignore[no-untyped-def]
-    """Start the minimal health-only FastAPI app as a subprocess."""
+    """Start the minimal health-only FastAPI app as a subprocess.
+
+    Yields (proc, port) so tests can target the port the OS picked for this
+    specific run.
+    """
+    port = _find_free_port()
     app_file = tmp_path / "drain_test_app.py"
-    app_file.write_text(APP_SRC)
+    app_file.write_text(_build_app_src(port))
 
     app_dir = os.path.join(os.path.dirname(__file__), "..", "..")
     app_dir = os.path.abspath(app_dir)
@@ -119,7 +142,7 @@ def app_process(tmp_path):  # type: ignore[no-untyped-def]
     )
 
     try:
-        _wait_for_ready()
+        _wait_for_ready(port)
     except TimeoutError:
         proc.kill()
         stdout, stderr = proc.communicate(timeout=5)
@@ -127,57 +150,62 @@ def app_process(tmp_path):  # type: ignore[no-untyped-def]
             f"Server failed to start.\nstdout: {stdout.decode()}\nstderr: {stderr.decode()}"
         )
 
-    yield proc
+    yield proc, port
 
     if proc.poll() is None:
         proc.kill()
         proc.wait(timeout=5)
 
 
-def test_ready_returns_200_before_sigterm(app_process: subprocess.Popen) -> None:  # type: ignore[type-arg]
-    r = httpx.get(f"http://127.0.0.1:{TEST_PORT}/ready", timeout=2.0)
+def test_ready_returns_200_before_sigterm(app_process) -> None:  # type: ignore[no-untyped-def]
+    _, port = app_process
+    r = httpx.get(f"http://127.0.0.1:{port}/ready", timeout=2.0)
     assert r.status_code == 200
     assert r.json()["status"] in ("ok", "not_ready")
 
 
-def test_health_returns_200_unconditionally(app_process: subprocess.Popen) -> None:  # type: ignore[type-arg]
-    r = httpx.get(f"http://127.0.0.1:{TEST_PORT}/health", timeout=2.0)
+def test_health_returns_200_unconditionally(app_process) -> None:  # type: ignore[no-untyped-def]
+    _, port = app_process
+    r = httpx.get(f"http://127.0.0.1:{port}/health", timeout=2.0)
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
 
 
-def test_ready_flips_to_503_on_sigterm(app_process: subprocess.Popen) -> None:  # type: ignore[type-arg]
-    r_before = httpx.get(f"http://127.0.0.1:{TEST_PORT}/ready", timeout=2.0)
+def test_ready_flips_to_503_on_sigterm(app_process) -> None:  # type: ignore[no-untyped-def]
+    proc, port = app_process
+    r_before = httpx.get(f"http://127.0.0.1:{port}/ready", timeout=2.0)
     assert r_before.status_code in (200, 503)
 
-    app_process.send_signal(signal.SIGTERM)
+    proc.send_signal(signal.SIGTERM)
 
-    _poll_until_503(timeout=DRAIN_FLIP_TIMEOUT)
+    _poll_until_503(port, timeout=DRAIN_FLIP_TIMEOUT)
 
-    r_after = httpx.get(f"http://127.0.0.1:{TEST_PORT}/ready", timeout=2.0)
+    r_after = httpx.get(f"http://127.0.0.1:{port}/ready", timeout=2.0)
     assert r_after.status_code == 503
     assert r_after.json() == {"status": "draining"}
 
 
-def test_health_stays_200_during_drain(app_process: subprocess.Popen) -> None:  # type: ignore[type-arg]
-    app_process.send_signal(signal.SIGTERM)
+def test_health_stays_200_during_drain(app_process) -> None:  # type: ignore[no-untyped-def]
+    proc, port = app_process
+    proc.send_signal(signal.SIGTERM)
 
-    _poll_until_503(timeout=DRAIN_FLIP_TIMEOUT)
+    _poll_until_503(port, timeout=DRAIN_FLIP_TIMEOUT)
 
-    r = httpx.get(f"http://127.0.0.1:{TEST_PORT}/health", timeout=2.0)
+    r = httpx.get(f"http://127.0.0.1:{port}/health", timeout=2.0)
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
 
 
-def test_process_exits_within_drain_window(app_process: subprocess.Popen) -> None:  # type: ignore[type-arg]
+def test_process_exits_within_drain_window(app_process) -> None:  # type: ignore[no-untyped-def]
     """Process must exit ≤ DRAIN_SECONDS + 5s after SIGTERM."""
-    app_process.send_signal(signal.SIGTERM)
-    _poll_until_503(timeout=DRAIN_FLIP_TIMEOUT)
+    proc, port = app_process
+    proc.send_signal(signal.SIGTERM)
+    _poll_until_503(port, timeout=DRAIN_FLIP_TIMEOUT)
 
     try:
-        exit_code = app_process.wait(timeout=PROCESS_EXIT_TIMEOUT)
+        exit_code = proc.wait(timeout=PROCESS_EXIT_TIMEOUT)
     except subprocess.TimeoutExpired:
-        app_process.kill()
+        proc.kill()
         pytest.fail(
             f"Process did not exit within {PROCESS_EXIT_TIMEOUT}s after SIGTERM"
         )

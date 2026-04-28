@@ -1,10 +1,21 @@
 """
 Activity Logger Service
-Centralized logging service for persistent, categorized activity logs.
+Centralized logging service for categorized activity logs.
+
+Persistence note: this branch ships activity logs to stdout as structured
+JSON only — the CloudWatch Logs sink for the web/worker tasks captures them
+and operators query via Logs Insights. The legacy SQLite-backed
+db.create_activity_log / list_activity_logs / count_activity_logs were
+removed when services/database.py was rewritten for Postgres async
+(awsk-rp6.8). A future Postgres-backed ActivityLog model + repo would
+restore in-app filtering — tracked as a follow-up bead.
 """
 
-from typing import Optional, Dict, Any
-from services import database as db
+from typing import Optional, Dict, Any, List
+
+from services.logging import get_logger
+
+_log = get_logger("activity")
 
 
 class ActivityLogger:
@@ -22,6 +33,14 @@ class ActivityLogger:
     ERROR = "error"
     SUCCESS = "success"
 
+    # Mapping from our level names to stdlib logging levels.
+    _LEVEL_MAP = {
+        "info": "info",
+        "warning": "warning",
+        "error": "error",
+        "success": "info",  # Custom level; maps to info severity.
+    }
+
     @staticmethod
     def log(
         category: str,
@@ -34,33 +53,53 @@ class ActivityLogger:
         related_type: Optional[str] = None,
         ip_address: Optional[str] = None,
     ) -> int:
-        """Create a log entry.
-
-        Args:
-            category: Log category ('app', 'job', 'sqs', 'admin')
-            action: Specific action type (e.g., 'connection', 'import_start')
-            message: Human-readable message
-            user_id: User ID (None for system logs)
-            level: Log level ('info', 'warning', 'error', 'success')
-            details: Additional context as dictionary
-            related_id: ID of related entity (job ID, queue ID, etc.)
-            related_type: Type of related entity ('job', 'queue', 'user', 'datastore')
-            ip_address: Client IP address for audit trail
+        """Emit a structured activity log entry to stdout (CloudWatch sink).
 
         Returns:
-            ID of the created log entry
+            0 — sentinel. The legacy contract returned a row ID; with
+            stdout-only persistence there's no ID. Callers don't appear to
+            use the return value.
         """
-        return db.create_activity_log(
-            category=category,
-            action=action,
-            message=message,
-            user_id=user_id,
-            level=level,
-            details=details,
-            related_id=related_id,
-            related_type=related_type,
-            ip_address=ip_address,
+        log_method = getattr(_log, ActivityLogger._LEVEL_MAP.get(level, "info"))
+        log_method(
+            message,
+            extra={
+                "activity_category": category,
+                "activity_action": action,
+                "activity_level": level,
+                "user_id": user_id,
+                "details": details,
+                "related_id": related_id,
+                "related_type": related_type,
+                "ip_address": ip_address,
+            },
         )
+        return 0
+
+    @staticmethod
+    def list_logs(
+        category: Optional[str] = None,
+        user_id: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+        include_all_users: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Return activity logs for an admin viewer.
+
+        Stub: returns []. Stdout-only persistence means no in-app query
+        path. Operators use CloudWatch Logs Insights against the
+        /aws/ecs/connect-<env>/web log group filtered by activity_category.
+        """
+        return []
+
+    @staticmethod
+    def count_logs(
+        category: Optional[str] = None,
+        user_id: Optional[str] = None,
+        include_all_users: bool = False,
+    ) -> int:
+        """Count activity logs. Stub: returns 0 (matches list_logs)."""
+        return 0
 
     # ============== Application Logs ==============
 

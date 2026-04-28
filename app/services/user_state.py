@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.lucidlink import LucidLinkClient
 from services.s3_service import S3Service
-from services import database as db
 from services import secrets
+from services.logging import get_logger
 from services.state import (
     delete_datastore_credentials,
     delete_sqs_credentials,
@@ -28,6 +28,37 @@ from services.state import (
     save_datastore_credentials,
     save_sqs_credentials,
 )
+
+# Legacy db.* shims: services/database.py was rewritten as async-only engine
+# in awsk-rp6.8 — the SQLite-era db.get_setting / db.get_all_datastore_credentials
+# / etc. are gone. These shims keep boot + first-request paths AttributeError-
+# free. Functionality that depended on these is degraded; proper async
+# conversion is tracked as a follow-up to awsk-opc.
+_log_legacy = get_logger("user_state.legacy_db")
+
+
+def _legacy_get_setting(_key: str) -> Optional[str]:
+    return None
+
+
+def _legacy_set_setting(key: str, _value: str) -> None:
+    _log_legacy.warning("set_setting skipped (no settings repo)", extra={"setting_key": key})
+
+
+def _legacy_get_all_datastore_credentials(*, user_id: Optional[str] = None) -> List[Dict]:
+    return []
+
+
+def _legacy_get_datastore_credentials(_datastore_id: str, *, user_id: Optional[str] = None) -> Optional[Dict]:
+    return None
+
+
+def _legacy_save_datastore_credentials(**kwargs: Any) -> None:
+    _log_legacy.warning("save_datastore_credentials skipped (use state.save_datastore_credentials async)", extra=kwargs)
+
+
+def _legacy_delete_datastore_credentials(_datastore_id: str, *, user_id: Optional[str] = None) -> bool:
+    return False
 
 
 @dataclass
@@ -73,9 +104,9 @@ class UserSession:
             self.token = saved_token
 
         # Load API host (can be user-specific or global)
-        saved_api_host = db.get_setting(f"api_host_{self.user_id}")
+        saved_api_host = _legacy_get_setting(f"api_host_{self.user_id}")
         if not saved_api_host:
-            saved_api_host = db.get_setting("api_host")
+            saved_api_host = _legacy_get_setting("api_host")
         if saved_api_host:
             self.api_host = saved_api_host
 
@@ -88,7 +119,7 @@ class UserSession:
         self.s3_services.clear()
 
         # Get only credentials for this user
-        all_creds = db.get_all_datastore_credentials(user_id=self.user_id)
+        all_creds = _legacy_get_all_datastore_credentials(user_id=self.user_id)
         for cred in all_creds:
             datastore_id = cred["datastore_id"]
             self.datastore_credentials[datastore_id] = cred
@@ -121,7 +152,7 @@ class UserSession:
             return self.s3_services[datastore_id]
 
         # Try to load from database (user-specific)
-        cred = db.get_datastore_credentials(datastore_id, user_id=self.user_id)
+        cred = _legacy_get_datastore_credentials(datastore_id, user_id=self.user_id)
         if cred:
             self._init_s3_service_for_datastore(cred)
             self.datastore_credentials[datastore_id] = cred
@@ -151,7 +182,7 @@ class UserSession:
         secrets.set_named_credentials(credentials_key, aws_access_key, aws_secret_key)
 
         # Save to database with user_id for isolation
-        db.save_datastore_credentials(
+        _legacy_save_datastore_credentials(
             datastore_id=datastore_id,
             datastore_name=datastore_name,
             filespace_id=filespace_id,
@@ -169,7 +200,7 @@ class UserSession:
 
     def remove_datastore_credentials(self, datastore_id: str) -> bool:
         """Remove DataStore credentials for this user."""
-        cred = db.get_datastore_credentials(datastore_id, user_id=self.user_id)
+        cred = _legacy_get_datastore_credentials(datastore_id, user_id=self.user_id)
         if cred:
             # Delete credentials from keyring
             credentials_key = cred.get("credentials_key")
@@ -177,7 +208,7 @@ class UserSession:
                 secrets.delete_named_credentials(credentials_key)
 
             # Delete from database (user-specific)
-            if db.delete_datastore_credentials(datastore_id, user_id=self.user_id):
+            if _legacy_delete_datastore_credentials(datastore_id, user_id=self.user_id):
                 # Remove from in-memory state
                 if datastore_id in self.s3_services:
                     del self.s3_services[datastore_id]
@@ -202,7 +233,7 @@ class UserSession:
 
         # Save API host to database (user-specific)
         if self.api_host:
-            db.set_setting(f"api_host_{self.user_id}", self.api_host)
+            _legacy_set_setting(f"api_host_{self.user_id}", self.api_host)
 
         self.log("Connection saved")
 

@@ -895,8 +895,8 @@ async def list_jobs(request: Request):
     """Get the job queue list."""
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
-    jobs = job_queue.get_jobs(user_id=user_id)
-    status = job_queue.get_queue_status(user_id=user_id)
+    jobs = await job_queue.get_jobs(user_id=user_id)
+    status = await job_queue.get_queue_status(user_id=user_id)
 
     return templates.TemplateResponse("partials/job_queue.html", {
         "request": request,
@@ -910,9 +910,9 @@ async def cancel_job(request: Request, job_id: int):
     """Cancel a job."""
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
-    job_queue.cancel_job(job_id, user_id=user_id)
-    jobs = job_queue.get_jobs(user_id=user_id)
-    status = job_queue.get_queue_status(user_id=user_id)
+    await job_queue.cancel_job(job_id, user_id=user_id)
+    jobs = await job_queue.get_jobs(user_id=user_id)
+    status = await job_queue.get_queue_status(user_id=user_id)
 
     return templates.TemplateResponse("partials/job_queue.html", {
         "request": request,
@@ -927,8 +927,8 @@ async def delete_job(request: Request, job_id: int):
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
     db.delete_job(job_id, user_id=user_id)
-    jobs = job_queue.get_jobs(user_id=user_id)
-    status = job_queue.get_queue_status(user_id=user_id)
+    jobs = await job_queue.get_jobs(user_id=user_id)
+    status = await job_queue.get_queue_status(user_id=user_id)
 
     return templates.TemplateResponse("partials/job_queue.html", {
         "request": request,
@@ -943,8 +943,8 @@ async def clear_jobs(request: Request):
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
     db.clear_completed_jobs(user_id=user_id)
-    jobs = job_queue.get_jobs(user_id=user_id)
-    status = job_queue.get_queue_status(user_id=user_id)
+    jobs = await job_queue.get_jobs(user_id=user_id)
+    status = await job_queue.get_queue_status(user_id=user_id)
 
     return templates.TemplateResponse("partials/job_queue.html", {
         "request": request,
@@ -1100,13 +1100,13 @@ async def logs_app(request: Request, limit: int = 100, offset: int = 0):
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
 
-    logs = db.list_activity_logs(
+    logs = ActivityLogger.list_logs(
         category=ActivityLogger.APP,
         user_id=user_id,
         limit=limit,
         offset=offset,
     )
-    total = db.count_activity_logs(category=ActivityLogger.APP, user_id=user_id)
+    total = ActivityLogger.count_logs(category=ActivityLogger.APP, user_id=user_id)
 
     return templates.TemplateResponse("partials/logs_app.html", {
         "request": request,
@@ -1124,13 +1124,13 @@ async def logs_jobs(request: Request, limit: int = 100, offset: int = 0):
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
 
-    logs = db.list_activity_logs(
+    logs = ActivityLogger.list_logs(
         category=ActivityLogger.JOB,
         user_id=user_id,
         limit=limit,
         offset=offset,
     )
-    total = db.count_activity_logs(category=ActivityLogger.JOB, user_id=user_id)
+    total = ActivityLogger.count_logs(category=ActivityLogger.JOB, user_id=user_id)
 
     return templates.TemplateResponse("partials/logs_jobs.html", {
         "request": request,
@@ -1148,13 +1148,13 @@ async def logs_sqs(request: Request, limit: int = 100, offset: int = 0):
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
 
-    logs = db.list_activity_logs(
+    logs = ActivityLogger.list_logs(
         category=ActivityLogger.SQS,
         user_id=user_id,
         limit=limit,
         offset=offset,
     )
-    total = db.count_activity_logs(category=ActivityLogger.SQS, user_id=user_id)
+    total = ActivityLogger.count_logs(category=ActivityLogger.SQS, user_id=user_id)
 
     return templates.TemplateResponse("partials/logs_sqs.html", {
         "request": request,
@@ -1176,13 +1176,13 @@ async def logs_admin(request: Request, limit: int = 100, offset: int = 0):
         raise HTTPException(status_code=403, detail="Admin access required")
 
     # Admin view: show all users' admin logs
-    logs = db.list_activity_logs(
+    logs = ActivityLogger.list_logs(
         category=ActivityLogger.ADMIN,
         limit=limit,
         offset=offset,
         include_all_users=True,
     )
-    total = db.count_activity_logs(category=ActivityLogger.ADMIN, include_all_users=True)
+    total = ActivityLogger.count_logs(category=ActivityLogger.ADMIN, include_all_users=True)
 
     return templates.TemplateResponse("partials/logs_admin.html", {
         "request": request,
