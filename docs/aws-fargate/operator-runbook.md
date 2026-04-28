@@ -1,8 +1,41 @@
 # Operator deployment runbook — `aws-fargate`
 
-This runbook walks through deploying the `aws-fargate` stack from scratch. The bootstrap TUI (Epic 6) is the canonical path once it ships; until then, follow the manual steps below.
+This runbook walks through deploying the `aws-fargate` stack from scratch. The TUI in `bootstrap/` (`connect-bootstrap`) is the canonical path; the manual steps below are the fallback when the TUI isn't usable (CI runs, headless environments).
 
 For architecture context, see `../../SPEC.md`. For per-module detail, see `../../terraform/modules/<name>/README.md`.
+
+## TUI path (canonical)
+
+```bash
+pip install -e ./bootstrap
+connect-bootstrap
+```
+
+Walks through:
+
+1. Dependency check (aws / terraform / jq / gh)
+2. AWS authentication (env / SSO / ministack)
+3. `terraform.tfvars` form
+4. `terraform plan` + confirm + `terraform apply` with live output
+5. Secrets Manager seeder (jwt + admin) — `Generate` button for the JWT
+6. ECS cluster verification (`describe-clusters`)
+7. CONNECT install (`update-service` + ALB target health smoke probe)
+8. Status dashboard (auto-refresh every 15s)
+
+Dry-run against ministack (no real AWS) for testing the wizard:
+
+```bash
+AWS_ENDPOINT_URL=http://localhost:4566 \
+AWS_ACCESS_KEY_ID=test \
+AWS_SECRET_ACCESS_KEY=test \
+connect-bootstrap
+```
+
+Not every step works against ministack-light (ECS / ALB / Auto Scaling are mostly stubbed); use the real AWS path for the actual smoke run.
+
+## Manual fallback path
+
+If the TUI isn't an option, run the steps below directly.
 
 ## Pre-requisites
 

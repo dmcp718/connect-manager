@@ -23,6 +23,11 @@ dependencies = [
     "prometheus-client>=0.21.0",
 ]
 
+# The bootstrap TUI ships as a separate package at ../bootstrap/ (its own
+# pyproject.toml + dependency tree) so the web app's runtime image isn't
+# pulled in by Textual + tooling. The bootstrap package reuses
+# app/services/aws.py via PYTHONPATH at run time.
+
 [tool.setuptools]
 packages = ["services"]
 py-modules = ["main"]
