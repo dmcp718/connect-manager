@@ -36,10 +36,7 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:${var.github_repo}:ref:refs/heads/aws-kubernetes",
-        "repo:${var.github_repo}:ref:refs/tags/v*",
-      ]
+      values   = [for ref in var.branch_refs : "repo:${var.github_repo}:ref:${ref}"]
     }
   }
 }
@@ -79,14 +76,65 @@ data "aws_iam_policy_document" "github_actions_inline" {
     resources = ["arn:aws:ecr:*:${data.aws_caller_identity.current.account_id}:repository/connect-*"]
   }
 
+  # Most ECS Describe/List actions don't support resource-level constraints.
+  # Mutating ECS actions (UpdateService, RunTask) accept the cluster as the
+  # resource — those are scoped below.
   statement {
-    sid    = "EKSDescribeAndSTS"
+    sid    = "ECSReadOnly"
     effect = "Allow"
     actions = [
-      "eks:DescribeCluster",
+      "ecs:DescribeClusters",
+      "ecs:DescribeServices",
+      "ecs:DescribeTasks",
+      "ecs:DescribeTaskDefinition",
+      "ecs:ListTasks",
+      "ecs:ListServices",
+      "ecs:ListTaskDefinitions",
       "sts:GetCallerIdentity",
     ]
-    resources = [var.eks_cluster_arn]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ECSRegisterTaskDefinition"
+    effect = "Allow"
+    # RegisterTaskDefinition does NOT support resource-level constraints —
+    # AWS evaluates iam:PassRole separately on the role ARNs in the request.
+    actions   = ["ecs:RegisterTaskDefinition"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ECSDeployToCluster"
+    effect = "Allow"
+    actions = [
+      "ecs:UpdateService",
+      "ecs:RunTask",
+      "ecs:StopTask",
+    ]
+    resources = [
+      var.cluster_arn,
+      "${var.cluster_arn}/*",
+      replace(var.cluster_arn, ":cluster/", ":service/"),
+      "${replace(var.cluster_arn, ":cluster/", ":service/")}/*",
+      replace(var.cluster_arn, ":cluster/", ":task-definition/"),
+      "${replace(var.cluster_arn, ":cluster/", ":task-definition/")}/*",
+      replace(var.cluster_arn, ":cluster/", ":task/"),
+      "${replace(var.cluster_arn, ":cluster/", ":task/")}/*",
+    ]
+  }
+
+  statement {
+    sid       = "PassECSTaskRoles"
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
+    resources = var.task_role_arns
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
   }
 }
 

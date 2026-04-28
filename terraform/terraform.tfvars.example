@@ -2,13 +2,35 @@
 domain          = "connect.example.com"
 route53_zone_id = "Z1234567890ABC"
 
+# Strongly recommended
+github_repo  = "dmcp718/connect-manager"
+alarms_email = "alerts@example.com"
+
 # Optional — defaults shown
-# env                   = "prod"
-# aws_region            = "us-east-1"
-# vpc_cidr              = "10.20.0.0/16"
-# ecr_repo_names        = ["connect-web", "connect-worker"]
-# github_repo           = "dmcp718/connect-manager"
+# env                       = "prod"
+# aws_region                = "us-east-1"
+# vpc_cidr                  = "10.20.0.0/16"
+# ecr_repo_names            = ["connect-web", "connect-worker"]
+# alb_ingress_cidrs         = ["0.0.0.0/0"]
+# web_target_port           = 8000
+# lucidlink_api_port        = 3003
+# log_level                 = "INFO"
+# app_env_vars              = {}
+#
+# Web service
+# web_image_tag      = "latest"
+# web_desired_count  = 2
+# web_min_count      = 2
+# web_max_count      = 6
+#
+# Worker service (scale-to-zero by default)
+# worker_image_tag           = "latest"
+# worker_desired_count       = 0
+# worker_min_count           = 0
+# worker_max_count           = 8
+# worker_target_queue_depth  = 5
+#
+# Data plane
 # rds_instance_class    = "db.t4g.micro"
 # rds_multi_az          = false
 # elasticache_node_type = "cache.t4g.micro"
-# alarms_email          = "alerts@example.com"

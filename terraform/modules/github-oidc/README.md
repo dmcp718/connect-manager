@@ -1,6 +1,17 @@
 # terraform/modules/github-oidc
 
-Creates the AWS IAM OIDC provider for GitHub Actions and a least-privilege deploy role scoped to the `aws-kubernetes` branch and `v*` release tags.
+GitHub Actions → AWS IAM federation. Creates the OIDC provider for `token.actions.githubusercontent.com` and a least-privilege deploy role scoped to the `aws-fargate` branch + `v*` release tags.
+
+## What the role can do
+
+| Sid | Actions | Resource |
+|---|---|---|
+| `ECRAuthToken` | `ecr:GetAuthorizationToken` | `*` (token has no resource scope in the API) |
+| `ECRRepositoryAccess` | push/pull on `connect-*` repos | `arn:aws:ecr:*:<account>:repository/connect-*` |
+| `ECSReadOnly` | `ecs:Describe*`, `ecs:List*`, `sts:GetCallerIdentity` | `*` (most ECS reads don't support resource-level constraints) |
+| `ECSRegisterTaskDefinition` | `ecs:RegisterTaskDefinition` | `*` (action doesn't support resource constraints — `iam:PassRole` is the real gate) |
+| `ECSDeployToCluster` | `ecs:UpdateService`, `ecs:RunTask`, `ecs:StopTask` | `var.cluster_arn` + service/task/task-definition siblings under it |
+| `PassECSTaskRoles` | `iam:PassRole` | `var.task_role_arns` (only when `iam:PassedToService=ecs-tasks.amazonaws.com`) |
 
 ## Usage
 
@@ -8,39 +19,41 @@ Creates the AWS IAM OIDC provider for GitHub Actions and a least-privilege deplo
 module "github_oidc" {
   source = "./modules/github-oidc"
 
-  github_repo     = "lucidlink/lucidlink-connect-web-app"
-  eks_cluster_arn = module.eks.cluster_arn
-  tags            = local.common_tags
+  github_repo    = "dmcp718/connect-manager"
+  cluster_arn    = module.ecs_cluster.cluster_arn
+  task_role_arns = concat(
+    [module.task_iam.execution_role_arn],
+    values(module.task_iam.role_arns),
+  )
+
+  tags = local.tags
 }
 ```
 
 ## Inputs
 
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `github_repo` | `string` | yes | GitHub repository in `org/repo` format (e.g. `lucidlink/lucidlink-connect-web-app`) |
-| `eks_cluster_arn` | `string` | yes | ARN of the EKS cluster the deploy role is permitted to describe |
-| `tags` | `map(string)` | no | Additional tags applied to all resources (default: `{}`) |
+| Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `github_repo` | `string` | yes | — | `org/repo`. |
+| `branch_refs` | `list(string)` | no | `["refs/heads/aws-fargate", "refs/tags/v*"]` | Trust-policy refs. |
+| `cluster_arn` | `string` | yes | — | Scopes mutating ECS actions. |
+| `task_role_arns` | `list(string)` | yes | — | Scopes `iam:PassRole`. |
+| `tags` | `map(string)` | no | `{}` | |
 
 ## Outputs
 
 | Name | Description |
-|------|-------------|
-| `role_arn` | ARN of the `connect-github-actions` IAM role — store in GitHub repo secrets |
-| `oidc_provider_arn` | ARN of the GitHub Actions OIDC provider |
+|---|---|
+| `role_arn` | The role ARN — add to GitHub repo secrets as `AWS_ROLE_ARN`. |
+| `role_name` | Role name — for attaching extra policies at root. |
+| `oidc_provider_arn` | OIDC provider ARN. |
 
 ## Operator follow-up
 
-After `terraform apply`, add the role ARN to the GitHub repository secrets:
+After `terraform apply`, push the role ARN to the GitHub repo:
 
-1. Get the ARN:
-   ```bash
-   terraform output -raw github_oidc_role_arn
-   ```
-2. Add it to the repository at **Settings → Secrets and variables → Actions**:
-   - **Name:** `AWS_ROLE_ARN`
-   - **Value:** the ARN from step 1
+```bash
+terraform output -raw github_actions_role_arn | gh secret set AWS_ROLE_ARN -R dmcp718/connect-manager
+```
 
-The GitHub Actions workflow (`ci.yml`) references `${{ secrets.AWS_ROLE_ARN }}` for the `aws-actions/configure-aws-credentials` step.
-
-> **Lead bead required:** File a bead to track adding `AWS_ROLE_ARN` to GitHub repo secrets once `terraform apply` completes in the Phase 4 real-AWS smoke run. The bead should block any CD smoke test that pushes an image to ECR.
+The CI workflow at `.github/workflows/aws-fargate.yml` references `${{ secrets.AWS_ROLE_ARN }}` for `aws-actions/configure-aws-credentials`.
