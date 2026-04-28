@@ -1,11 +1,46 @@
 .git
+.github
 .gitignore
-*.md
-*.pyc
-__pycache__
-.pytest_cache
-.venv
-venv
+**/*.md
+!README.md
+**/*.pyc
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.venv
+**/venv
+**/htmlcov
+**/.coverage
+**/.coverage.*
+**/snapshot_report.html
 .env
 *.egg-info
 .DS_Store
+
+# Local dev / CI artifacts
+local/
+.claire/
+.beads/
+.dolt/
+
+# Terraform state + local overrides (image only needs source)
+terraform/.terraform
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/local.tfvars
+terraform/local-ministack-override.tf
+terraform/terraform.tfvars
+
+# Bootstrap TUI is shipped separately, not bundled into web/worker images
+bootstrap/
+
+# Other-branch deploy artifacts (aws-deploy, multi-user)
+docker-compose.aws.yml
+docker-compose.prod-shared.yml
+docker-compose.prod.yml
+Caddyfile
+Dockerfile.caddy
+deploy.sh
+run.bat
+run.sh

@@ -57,7 +57,38 @@ terraform init                                  # populate backend.tf first
 terraform apply
 ```
 
-After apply, push the GitHub OIDC role ARN into the repo's `AWS_ROLE_ARN` secret so CI can deploy. Subsequent deploys are handled by `.github/workflows/aws-fargate.yml`.
+After the first apply you have two paths for ongoing deploys (image builds + ECS service updates). Pick whichever fits your operational model:
+
+#### Path A — GitHub Actions CI/CD (fork-based)
+
+Use this if you want push-to-deploy from a Git repo. **Set `github_repo = "your-org/your-fork"` in `terraform.tfvars`** before applying (or re-apply after) — that templates the OIDC trust policy with your repo's path.
+
+After apply:
+
+```bash
+# Read the role ARN that terraform created for your repo:
+ROLE_ARN="$(cd terraform && terraform output -raw github_actions_role_arn)"
+
+# Push it as a secret on YOUR fork (use your gh auth, not the upstream repo's):
+gh secret set AWS_ROLE_ARN --repo "$YOUR_ORG/$YOUR_FORK" --body "$ROLE_ARN"
+```
+
+Pushes to the `aws-fargate` branch on your fork now trigger `.github/workflows/aws-fargate.yml` — it builds + pushes images to your ECR, runs the migrate task, and rolls the web/worker services. The upstream `dmcp718/connect-manager` repo is never involved.
+
+#### Path B — No GitHub Actions (manual / your own CI)
+
+Use this if you don't want to fork, or if you have your own CI/CD pipeline (Jenkins, GitLab CI, CircleCI, internal tooling). **Set `github_repo = ""` in `terraform.tfvars`** — the github-oidc module skips and `terraform output github_actions_role_arn` returns `null`. No `gh secret set` step needed.
+
+For builds + deploys, use the bundled script:
+
+```bash
+./scripts/deploy.sh                  # uses HEAD's short SHA as the image tag
+./scripts/deploy.sh v0.1.2           # explicit version tag
+```
+
+It does what the GitHub workflow does: `docker buildx build --target {web,worker}` for `linux/amd64,linux/arm64`, push to ECR, register new migrate task definition revision and run-task it (waits for clean exit), then update the web + worker services with `--force-new-deployment` and `aws ecs wait services-stable`. Source: `scripts/deploy.sh`.
+
+Or wire your own CI to call the same `aws ecs ...` commands — the workflow file is a working reference.
 
 ### Local development (no AWS)
 
