@@ -1,75 +1,27 @@
-"""
-Per-User State Management
-Replaces the global AppState with user-scoped sessions
+"""Per-User State Management.
+
+Pure in-memory session state — singleton-per-process keyed by user_id.
+Persistence (DataStore credentials, LucidLink token) lives in Postgres +
+services.secrets; UserSession holds a cache that is hydrated on the
+first post-login request via :meth:`UserSession.hydrate` and updated
+write-through by the routes in main.py that call services.state's
+async repo helpers.
 """
 
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence
-from dataclasses import dataclass, field
 import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services import secrets
 from services.lucidlink import LucidLinkClient
 from services.s3_service import S3Service
-from services import secrets
-from services.logging import get_logger
-from services.state import (
-    delete_datastore_credentials,
-    delete_sqs_credentials,
-    get_datastore_credentials,
-    get_sqs_credentials,
-    list_all_datastore_credentials,
-    list_sqs_credentials,
-    list_sqs_queues,
-    save_datastore_credentials,
-    save_sqs_credentials,
-)
-
-# Legacy db.* shims kept here for the few in-class methods on UserSession
-# that still reference the old SQLite API (save_connection / save_datastore_for_browsing).
-# Most call sites were converted to async repos in awsk-26h.{1..4} and
-# awsk-uvz; the remaining stubs let UserSession boot without import errors
-# while the in-memory session-state pattern is maintained.
-_log_legacy = get_logger("user_state.legacy_db")
-
-
-def _legacy_get_setting(_key: str) -> Optional[str]:
-    return None
-
-
-def _legacy_set_setting(key: str, _value: str) -> None:
-    _log_legacy.warning(
-        "set_setting skipped (no settings repo)", extra={"setting_key": key}
-    )
-
-
-def _legacy_get_all_datastore_credentials(
-    *, user_id: Optional[str] = None
-) -> List[Dict]:
-    return []
-
-
-def _legacy_get_datastore_credentials(
-    _datastore_id: str, *, user_id: Optional[str] = None
-) -> Optional[Dict]:
-    return None
-
-
-def _legacy_save_datastore_credentials(**kwargs: Any) -> None:
-    _log_legacy.warning(
-        "save_datastore_credentials skipped (use state.save_datastore_credentials async)",
-        extra=kwargs,
-    )
-
-
-def _legacy_delete_datastore_credentials(
-    _datastore_id: str, *, user_id: Optional[str] = None
-) -> bool:
-    return False
+from services.state import list_all_datastore_credentials
 
 
 @dataclass
@@ -107,145 +59,113 @@ class UserSession:
     logs: List[str] = field(default_factory=list)
     _max_logs: int = 500
 
+    # Set to True after the first successful hydrate() so subsequent route
+    # calls can skip the Postgres round-trip.
+    hydrated: bool = False
+
     def load_from_db(self) -> None:
-        """Load saved state from database for this user."""
-        # Load user-specific token
+        """Load saved state that doesn't require an async DB session.
+
+        Currently just the user's LucidLink API token, which lives in
+        services.secrets (Fernet-encrypted in container mode, OS keyring
+        in local-dev mode) — neither path needs a Postgres call. The
+        DataStore credential rehydrate happens lazily via async
+        :meth:`hydrate` because route handlers own the AsyncSession.
+        """
         saved_token = secrets.get_user_token(self.user_id)
         if saved_token:
             self.token = saved_token
+        # api_host persistence isn't yet wired (no Settings model on this
+        # branch). Falls back to the empty default; LucidLinkClient uses
+        # LL_HOST when api_host is empty.
 
-        # Load API host (can be user-specific or global)
-        saved_api_host = _legacy_get_setting(f"api_host_{self.user_id}")
-        if not saved_api_host:
-            saved_api_host = _legacy_get_setting("api_host")
-        if saved_api_host:
-            self.api_host = saved_api_host
+    async def hydrate(
+        self, session: AsyncSession, user_uuid: Optional[uuid.UUID]
+    ) -> None:
+        """Repopulate the in-memory DataStore-credential cache from Postgres.
 
-        # Load user's DataStore credentials
-        self._load_datastore_credentials()
-
-    def _load_datastore_credentials(self) -> None:
-        """Load all saved DataStore credentials for this user."""
-        self.datastore_credentials.clear()
-        self.s3_services.clear()
-
-        # Get only credentials for this user
-        all_creds = _legacy_get_all_datastore_credentials(user_id=self.user_id)
-        for cred in all_creds:
-            datastore_id = cred["datastore_id"]
-            self.datastore_credentials[datastore_id] = cred
-            self._init_s3_service_for_datastore(cred)
-
-    def _init_s3_service_for_datastore(self, cred: Dict) -> None:
-        """Initialize an S3 service for a DataStore."""
-        datastore_id = cred.get("datastore_id")
-        credentials_key = cred.get("credentials_key")
-
-        if not datastore_id or not credentials_key:
+        Idempotent — only runs once per UserSession via the `hydrated` flag.
+        Routes that read state.datastore_credentials right after login
+        (index, tab_browser, tab_settings) await this so a fresh post-login
+        view sees the user's previously-saved DataStores.
+        """
+        if self.hydrated:
             return
+        rows = await list_all_datastore_credentials(session, user_id=user_uuid)
+        for row in rows:
+            datastore_id = row["datastore_id"]
+            # row contains decrypted access_key + secret_key from
+            # state.list_all_datastore_credentials. Mirror the legacy dict
+            # shape into the in-memory cache (the `credentials_key` field
+            # is no longer used — Fernet ciphertext lives only in the
+            # ORM column, never in the cache).
+            self.datastore_credentials[datastore_id] = {
+                "datastore_id": datastore_id,
+                "datastore_name": row.get("datastore_name"),
+                "filespace_id": row.get("filespace_id"),
+                "filespace_name": row.get("filespace_name"),
+                "bucket_name": row.get("bucket_name"),
+                "region": row.get("region"),
+                "endpoint": row.get("endpoint"),
+            }
+            self._init_s3_service_from_keys(
+                datastore_id,
+                access_key=row["access_key"],
+                secret_key=row["secret_key"],
+                region=row.get("region"),
+                endpoint=row.get("endpoint"),
+            )
+        self.hydrated = True
 
-        # Get credentials
-        access_key, secret_key = secrets.get_named_credentials(credentials_key)
+    def _init_s3_service_from_keys(
+        self,
+        datastore_id: str,
+        *,
+        access_key: str,
+        secret_key: str,
+        region: Optional[str],
+        endpoint: Optional[str],
+    ) -> None:
+        """Construct an S3Service from already-decrypted creds."""
         if not access_key or not secret_key:
             return
-
-        # Create S3 service
         self.s3_services[datastore_id] = S3Service(
             access_key=access_key,
             secret_key=secret_key,
-            region=cred.get("region") or "us-east-1",
-            endpoint_url=cred.get("endpoint"),
+            region=region or "us-east-1",
+            endpoint_url=endpoint,
         )
 
     def get_s3_service_for_datastore(self, datastore_id: str) -> Optional[S3Service]:
-        """Get or create S3 service for a DataStore."""
-        if datastore_id in self.s3_services:
-            return self.s3_services[datastore_id]
+        """Return the S3 service for a DataStore from the in-memory cache.
 
-        # Try to load from database (user-specific)
-        cred = _legacy_get_datastore_credentials(datastore_id, user_id=self.user_id)
-        if cred:
-            self._init_s3_service_for_datastore(cred)
-            self.datastore_credentials[datastore_id] = cred
-            return self.s3_services.get(datastore_id)
-
-        return None
+        Cache is populated by :meth:`hydrate` (post-login) and by the
+        save/delete routes in main.py that write through to Postgres.
+        Returns None if the cache miss — callers can re-trigger hydrate
+        if they suspect the cache is stale.
+        """
+        return self.s3_services.get(datastore_id)
 
     def get_datastore_by_id(self, datastore_id: str) -> Optional[Dict]:
-        """Get DataStore credentials by ID."""
+        """Get DataStore credentials by ID from the in-memory cache."""
         return self.datastore_credentials.get(datastore_id)
-
-    def save_datastore_for_browsing(
-        self,
-        datastore_id: str,
-        datastore_name: str,
-        filespace_id: str,
-        filespace_name: str,
-        bucket_name: str,
-        region: Optional[str],
-        endpoint: Optional[str],
-        aws_access_key: str,
-        aws_secret_key: str,
-    ) -> None:
-        """Save DataStore credentials for S3 browsing."""
-        # Generate and store credentials
-        credentials_key = secrets.generate_credentials_key()
-        secrets.set_named_credentials(credentials_key, aws_access_key, aws_secret_key)
-
-        # Save to database with user_id for isolation
-        _legacy_save_datastore_credentials(
-            datastore_id=datastore_id,
-            datastore_name=datastore_name,
-            filespace_id=filespace_id,
-            filespace_name=filespace_name,
-            bucket_name=bucket_name,
-            region=region,
-            endpoint=endpoint,
-            credentials_key=credentials_key,
-            user_id=self.user_id,
-        )
-
-        # Reload to update in-memory state
-        self._load_datastore_credentials()
-        self.log(f"Saved DataStore '{datastore_name}' for browsing")
-
-    def remove_datastore_credentials(self, datastore_id: str) -> bool:
-        """Remove DataStore credentials for this user."""
-        cred = _legacy_get_datastore_credentials(datastore_id, user_id=self.user_id)
-        if cred:
-            # Delete credentials from keyring
-            credentials_key = cred.get("credentials_key")
-            if credentials_key:
-                secrets.delete_named_credentials(credentials_key)
-
-            # Delete from database (user-specific)
-            if _legacy_delete_datastore_credentials(datastore_id, user_id=self.user_id):
-                # Remove from in-memory state
-                if datastore_id in self.s3_services:
-                    del self.s3_services[datastore_id]
-                if datastore_id in self.datastore_credentials:
-                    del self.datastore_credentials[datastore_id]
-
-                self.log(
-                    f"Removed DataStore credentials: {cred.get('datastore_name', 'Unknown')}"
-                )
-                return True
-        return False
 
     def get_browsable_datastores(self) -> List[Dict]:
         """Get list of DataStores that have credentials for browsing."""
         return list(self.datastore_credentials.values())
 
     def save_connection(self, save_secrets: bool = True) -> None:
-        """Save current connection state to database and keyring."""
-        # Save secrets to keyring (user-specific)
+        """Persist the user's LucidLink token via services.secrets.
+
+        api_host persistence is intentionally not yet implemented — there
+        is no Settings model on this branch (legacy SQLite settings table
+        was dropped in the Postgres rewrite). The api_host stays in
+        in-memory UserSession for the duration of the process; on
+        restart the user re-enters it via the Settings tab. Tracked as
+        a separate follow-up.
+        """
         if save_secrets and self.token:
             secrets.set_user_token(self.user_id, self.token)
-
-        # Save API host to database (user-specific)
-        if self.api_host:
-            _legacy_set_setting(f"api_host_{self.user_id}", self.api_host)
-
         self.log("Connection saved")
 
     def log(self, message: str) -> None:
@@ -306,103 +226,3 @@ user_state_manager = UserStateManager()
 def get_user_session(user_id: str) -> UserSession:
     """Convenience function to get a user's session."""
     return user_state_manager.get_session(user_id)
-
-
-# ── Per-user async wrappers ───────────────────────────────────────────────────
-# Thin wrappers over the functions in services.state that fix user_id.
-# These are the call-sites for routes/main that operate in multi-user mode.
-
-
-async def save_user_datastore_credentials(
-    session: AsyncSession,
-    user_id: uuid.UUID,
-    datastore_id: str,
-    datastore_name: str,
-    filespace_id: str,
-    filespace_name: str,
-    bucket_name: str,
-    access_key: str,
-    secret_key: str,
-    region: Optional[str] = None,
-    endpoint: Optional[str] = None,
-) -> Any:
-    return await save_datastore_credentials(
-        session,
-        datastore_id=datastore_id,
-        datastore_name=datastore_name,
-        filespace_id=filespace_id,
-        filespace_name=filespace_name,
-        bucket_name=bucket_name,
-        access_key=access_key,
-        secret_key=secret_key,
-        region=region,
-        endpoint=endpoint,
-        user_id=user_id,
-    )
-
-
-async def get_user_datastore_credentials(
-    session: AsyncSession,
-    user_id: uuid.UUID,
-    datastore_id: str,
-) -> Optional[Dict[str, Any]]:
-    return await get_datastore_credentials(session, datastore_id, user_id=user_id)
-
-
-async def delete_user_datastore_credentials(
-    session: AsyncSession,
-    user_id: uuid.UUID,
-    datastore_id: str,
-) -> bool:
-    return await delete_datastore_credentials(session, datastore_id, user_id=user_id)
-
-
-async def list_user_datastore_credentials(
-    session: AsyncSession,
-    user_id: uuid.UUID,
-) -> List[Dict[str, Any]]:
-    return await list_all_datastore_credentials(session, user_id=user_id)
-
-
-async def save_user_sqs_credentials(
-    session: AsyncSession,
-    user_id: uuid.UUID,
-    access_key: str,
-    secret_key: str,
-    region: str,
-) -> Any:
-    return await save_sqs_credentials(
-        session,
-        access_key=access_key,
-        secret_key=secret_key,
-        region=region,
-        user_id=user_id,
-    )
-
-
-async def get_user_sqs_credentials(
-    session: AsyncSession,
-    user_id: uuid.UUID,
-) -> Optional[Dict[str, Any]]:
-    return await get_sqs_credentials(session, user_id=user_id)
-
-
-async def list_user_sqs_credentials(
-    session: AsyncSession,
-    user_id: uuid.UUID,
-) -> List[Dict[str, Any]]:
-    return await list_sqs_credentials(session, user_id=user_id)
-
-
-async def delete_user_sqs_credentials(
-    session: AsyncSession,
-    user_id: uuid.UUID,
-) -> bool:
-    return await delete_sqs_credentials(session, user_id=user_id)
-
-
-async def list_user_sqs_queues(
-    session: AsyncSession,
-    user_id: uuid.UUID,
-) -> Sequence[Any]:
-    return await list_sqs_queues(session, user_id=user_id)

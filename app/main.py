@@ -223,9 +223,10 @@ async def index(
 ):
     """Main page."""
     state = get_session_from_request(request)
-    browsable_datastores = state.get_browsable_datastores()
     user_id = getattr(request.state, "user_id", None)
     parsed_uid = _parse_uid(user_id)
+    await state.hydrate(session, parsed_uid)
+    browsable_datastores = state.get_browsable_datastores()
     ds_repo = DatastoreCredentialsRepository(session)
 
     # Build datastores data for list view
@@ -769,11 +770,17 @@ async def delete_datastore(
     if ds_name in state.datastores:
         del state.datastores[ds_name]
 
-    # Also remove any saved credentials for this datastore
-    state.remove_datastore_credentials(datastore_id)
-
-    # Log DataStore deletion
+    # Also remove any saved credentials for this datastore (Postgres + cache)
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid_for_delete = _parse_uid(user_id)
+    deleted_creds = await state_helpers.delete_datastore_credentials(
+        session, datastore_id, user_id=parsed_uid_for_delete
+    )
+    await session.commit()
+    if deleted_creds:
+        state.datastore_credentials.pop(datastore_id, None)
+        state.s3_services.pop(datastore_id, None)
+
     ActivityLogger.app_datastore_deleted(user_id, ds_name)
 
     # Return updated list
@@ -918,18 +925,37 @@ async def create_datastore(
             if ds_name == name:
                 new_datastore_id = ds_id
 
-        # Auto-save credentials for the new DataStore
+        # Auto-save credentials for the new DataStore so the user lands in
+        # the browser tab without re-entering keys.
         if new_datastore_id:
-            state.save_datastore_for_browsing(
+            await state_helpers.save_datastore_credentials(
+                session,
                 datastore_id=new_datastore_id,
                 datastore_name=name,
                 filespace_id=filespace_id,
                 filespace_name=state.selected_filespace,
                 bucket_name=bucket,
+                access_key=access_key,
+                secret_key=secret_key,
                 region=region,
                 endpoint=endpoint,
-                aws_access_key=access_key,
-                aws_secret_key=secret_key,
+                user_id=parsed_uid,
+            )
+            await session.commit()
+            state.datastore_credentials[new_datastore_id] = {
+                "datastore_id": new_datastore_id,
+                "datastore_name": name,
+                "filespace_id": filespace_id,
+                "filespace_name": state.selected_filespace,
+                "bucket_name": bucket,
+                "region": region,
+                "endpoint": endpoint,
+            }
+            state.s3_services[new_datastore_id] = S3Service(
+                access_key=access_key,
+                secret_key=secret_key,
+                region=region or "us-east-1",
+                endpoint_url=endpoint or None,
             )
 
         # Log DataStore creation
@@ -1356,9 +1382,10 @@ async def tab_settings(
 ):
     """Return settings tab content."""
     state = get_session_from_request(request)
-    browsable_datastores = state.get_browsable_datastores()
     user_id = getattr(request.state, "user_id", None)
     parsed_uid = _parse_uid(user_id)
+    await state.hydrate(session, parsed_uid)
+    browsable_datastores = state.get_browsable_datastores()
     ds_repo = DatastoreCredentialsRepository(session)
 
     # Build datastores data for list view
@@ -1394,9 +1421,15 @@ async def tab_settings(
 
 
 @app.get("/api/tab/browser", response_class=HTMLResponse)
-async def tab_browser(request: Request):
+async def tab_browser(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
     """Return browser tab content."""
     state = get_session_from_request(request)
+    user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
+    await state.hydrate(session, parsed_uid)
     browsable_datastores = state.get_browsable_datastores()
 
     if browsable_datastores:
