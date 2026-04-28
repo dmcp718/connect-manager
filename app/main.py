@@ -31,7 +31,6 @@ from services.lucidlink import LucidLinkClient, LL_HOST
 from services.s3_service import S3Service
 from services.user_state import UserSession, get_user_session
 from services.job_queue import job_queue
-from services import database as db
 from services.database import get_db, shutdown_engine
 from services import auth as auth_service
 from services.activity_logger import ActivityLogger
@@ -133,6 +132,12 @@ async def _enrich_queues_for_template(
 async def _startup() -> None:
     auth_service.ensure_jwt_secret_valid()
     auth_service.ensure_admin_exists()
+    # Wire ActivityLogger fire-and-forget DB persistence before any route
+    # (including the login endpoint) gets a chance to call ActivityLogger.log.
+    from services.activity_logger import configure_persistence
+    from services.database import get_sessionmaker
+
+    configure_persistence(get_sessionmaker())
     await job_queue.start()
     # Background sampler for connect_arq_queue_depth + connect_db_pool_in_use.
     try:
@@ -1479,18 +1484,26 @@ async def tab_logs(request: Request, subtab: str = "app"):
 
 
 @app.get("/api/logs/app", response_class=HTMLResponse)
-async def logs_app(request: Request, limit: int = 100, offset: int = 0):
+async def logs_app(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    session: AsyncSession = Depends(get_db),
+):
     """Return application logs content."""
+    from services.activity_logger import acount_logs, alist_logs
+
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
 
-    logs = ActivityLogger.list_logs(
+    logs = await alist_logs(
+        session,
         category=ActivityLogger.APP,
         user_id=user_id,
         limit=limit,
         offset=offset,
     )
-    total = ActivityLogger.count_logs(category=ActivityLogger.APP, user_id=user_id)
+    total = await acount_logs(session, category=ActivityLogger.APP, user_id=user_id)
 
     return templates.TemplateResponse(
         "partials/logs_app.html",
@@ -1506,18 +1519,26 @@ async def logs_app(request: Request, limit: int = 100, offset: int = 0):
 
 
 @app.get("/api/logs/jobs", response_class=HTMLResponse)
-async def logs_jobs(request: Request, limit: int = 100, offset: int = 0):
+async def logs_jobs(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    session: AsyncSession = Depends(get_db),
+):
     """Return jobs logs content."""
+    from services.activity_logger import acount_logs, alist_logs
+
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
 
-    logs = ActivityLogger.list_logs(
+    logs = await alist_logs(
+        session,
         category=ActivityLogger.JOB,
         user_id=user_id,
         limit=limit,
         offset=offset,
     )
-    total = ActivityLogger.count_logs(category=ActivityLogger.JOB, user_id=user_id)
+    total = await acount_logs(session, category=ActivityLogger.JOB, user_id=user_id)
 
     return templates.TemplateResponse(
         "partials/logs_jobs.html",
@@ -1533,18 +1554,26 @@ async def logs_jobs(request: Request, limit: int = 100, offset: int = 0):
 
 
 @app.get("/api/logs/sqs", response_class=HTMLResponse)
-async def logs_sqs(request: Request, limit: int = 100, offset: int = 0):
+async def logs_sqs(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    session: AsyncSession = Depends(get_db),
+):
     """Return SQS logs content."""
+    from services.activity_logger import acount_logs, alist_logs
+
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
 
-    logs = ActivityLogger.list_logs(
+    logs = await alist_logs(
+        session,
         category=ActivityLogger.SQS,
         user_id=user_id,
         limit=limit,
         offset=offset,
     )
-    total = ActivityLogger.count_logs(category=ActivityLogger.SQS, user_id=user_id)
+    total = await acount_logs(session, category=ActivityLogger.SQS, user_id=user_id)
 
     return templates.TemplateResponse(
         "partials/logs_sqs.html",
@@ -1560,23 +1589,31 @@ async def logs_sqs(request: Request, limit: int = 100, offset: int = 0):
 
 
 @app.get("/api/logs/admin", response_class=HTMLResponse)
-async def logs_admin(request: Request, limit: int = 100, offset: int = 0):
+async def logs_admin(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    session: AsyncSession = Depends(get_db),
+):
     """Return admin activity logs (admin only)."""
+    from services.activity_logger import acount_logs, alist_logs
+
     _ = get_session_from_request(request)  # Verify authenticated
     is_admin = getattr(request.state, "is_admin", False)
 
     if not is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    # Admin view: show all users' admin logs
-    logs = ActivityLogger.list_logs(
+    # Admin view: show all users' admin logs.
+    logs = await alist_logs(
+        session,
         category=ActivityLogger.ADMIN,
         limit=limit,
         offset=offset,
         include_all_users=True,
     )
-    total = ActivityLogger.count_logs(
-        category=ActivityLogger.ADMIN, include_all_users=True
+    total = await acount_logs(
+        session, category=ActivityLogger.ADMIN, include_all_users=True
     )
 
     return templates.TemplateResponse(
@@ -1593,13 +1630,18 @@ async def logs_admin(request: Request, limit: int = 100, offset: int = 0):
 
 
 @app.post("/api/logs/clear/{category}", response_class=HTMLResponse)
-async def clear_logs_category(request: Request, category: str):
+async def clear_logs_category(
+    request: Request,
+    category: str,
+    session: AsyncSession = Depends(get_db),
+):
     """Clear logs by category."""
+    from services.activity_logger import aclear_logs
+
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
     is_admin = getattr(request.state, "is_admin", False)
 
-    # Validate category
     valid_categories = ["app", "jobs", "sqs"]
     if is_admin:
         valid_categories.append("admin")
@@ -1610,14 +1652,20 @@ async def clear_logs_category(request: Request, category: str):
     # Map URL category to database category
     db_category = category if category != "jobs" else "job"
 
-    # For admin logs, only admins can clear and it clears all users
     if category == "admin":
         if not is_admin:
             raise HTTPException(status_code=403, detail="Admin access required")
-        db.clear_activity_logs(category=db_category)
+        # Admin tab clears every user's admin-category logs.
+        from sqlalchemy import delete as sa_delete
+
+        from db.models import ActivityLog
+
+        await session.execute(
+            sa_delete(ActivityLog).where(ActivityLog.category == db_category)
+        )
     else:
-        # Clear only the user's own logs for this category
-        db.clear_activity_logs(category=db_category, user_id=user_id)
+        await aclear_logs(session, category=db_category, user_id=user_id)
+    await session.commit()
 
     # Return empty logs template for the category
     template_map = {

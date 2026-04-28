@@ -1,21 +1,150 @@
+"""Activity Logger Service.
+
+Categorized activity logs that ship two places:
+1. **stdout → CloudWatch Logs** as structured JSON, always (operator
+   query path via Logs Insights).
+2. **Postgres `activity_logs` table** when a sessionmaker has been
+   wired via :func:`configure_persistence`. Persisted via fire-and-
+   forget asyncio tasks so the sync ``log()`` API used at ~38 call
+   sites doesn't have to await — failures fall back to stdout-only.
+
+The in-UI tabs (logs_app / logs_jobs / logs_sqs / logs_admin) read
+from Postgres via :func:`alist_logs` + :func:`acount_logs`; routes
+own their own AsyncSession via Depends(get_db).
 """
-Activity Logger Service
-Centralized logging service for categorized activity logs.
 
-Persistence note: this branch ships activity logs to stdout as structured
-JSON only — the CloudWatch Logs sink for the web/worker tasks captures them
-and operators query via Logs Insights. The legacy SQLite-backed
-db.create_activity_log / list_activity_logs / count_activity_logs were
-removed when services/database.py was rewritten for Postgres async
-(awsk-rp6.8). A future Postgres-backed ActivityLog model + repo would
-restore in-app filtering — tracked as a follow-up bead.
-"""
+from __future__ import annotations
 
-from typing import Optional, Dict, Any, List
+import asyncio
+import uuid
+from typing import Any, Dict, List, Optional
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from db.repositories.activity_log import ActivityLogRepository
 from services.logging import get_logger
 
 _log = get_logger("activity")
+
+# Set by services.activity_logger.configure_persistence() at app startup.
+# When None, log() is stdout-only — keeps the module usable from tests
+# and from the worker's startup-before-DB path.
+_sessionmaker: Optional[async_sessionmaker[AsyncSession]] = None
+
+
+def configure_persistence(sm: async_sessionmaker[AsyncSession]) -> None:
+    """Wire the async_sessionmaker for fire-and-forget DB inserts.
+
+    Called from main._startup and worker.on_startup. Idempotent — last
+    write wins, which matches our singleton sessionmaker pattern.
+    """
+    global _sessionmaker
+    _sessionmaker = sm
+
+
+def _parse_user_id(user_id: Optional[str]) -> Optional[uuid.UUID]:
+    if user_id is None:
+        return None
+    try:
+        return uuid.UUID(user_id)
+    except (ValueError, AttributeError):
+        return None
+
+
+async def _persist(
+    sm: async_sessionmaker[AsyncSession],
+    *,
+    category: str,
+    action: str,
+    message: str,
+    level: str,
+    user_uuid: Optional[uuid.UUID],
+    details: Optional[Dict[str, Any]],
+    related_id: Optional[str],
+    related_type: Optional[str],
+    ip_address: Optional[str],
+) -> None:
+    """Background task body — owns its own session and commits."""
+    try:
+        async with sm() as session:
+            await ActivityLogRepository(session).create_entry(
+                category=category,
+                action=action,
+                message=message,
+                level=level,
+                user_id=user_uuid,
+                details=details,
+                related_id=related_id,
+                related_type=related_type,
+                ip_address=ip_address,
+            )
+            await session.commit()
+    except Exception as exc:  # pragma: no cover — degraded-mode log only
+        _log.warning(
+            "activity-log persist failed; row stays stdout-only",
+            extra={"error": str(exc), "category": category, "action": action},
+        )
+
+
+async def alist_logs(
+    session: AsyncSession,
+    *,
+    category: Optional[str] = None,
+    user_id: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    include_all_users: bool = False,
+) -> List[Dict[str, Any]]:
+    """Return logs in the dict shape the templates expect."""
+    rows = await ActivityLogRepository(session).list_filtered(
+        category=category,
+        user_id=_parse_user_id(user_id),
+        include_all_users=include_all_users,
+        limit=limit,
+        offset=offset,
+    )
+    return [
+        {
+            "id": r.id,
+            "category": r.category,
+            "action": r.action,
+            "message": r.message,
+            "level": r.level,
+            "user_id": str(r.user_id) if r.user_id else None,
+            "details": r.details,
+            "related_id": r.related_id,
+            "related_type": r.related_type,
+            "ip_address": r.ip_address,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+async def acount_logs(
+    session: AsyncSession,
+    *,
+    category: Optional[str] = None,
+    user_id: Optional[str] = None,
+    include_all_users: bool = False,
+) -> int:
+    return await ActivityLogRepository(session).count_filtered(
+        category=category,
+        user_id=_parse_user_id(user_id),
+        include_all_users=include_all_users,
+    )
+
+
+async def aclear_logs(
+    session: AsyncSession,
+    *,
+    category: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> int:
+    return await ActivityLogRepository(session).clear_for_user(
+        category=category,
+        user_id=_parse_user_id(user_id),
+    )
 
 
 class ActivityLogger:
@@ -53,12 +182,18 @@ class ActivityLogger:
         related_type: Optional[str] = None,
         ip_address: Optional[str] = None,
     ) -> int:
-        """Emit a structured activity log entry to stdout (CloudWatch sink).
+        """Emit a structured activity log entry.
+
+        - Always ships to stdout → CloudWatch Logs (structured JSON).
+        - Additionally fires an asyncio.create_task to persist to the
+          ``activity_logs`` table, IF :func:`configure_persistence` has
+          wired a sessionmaker AND a running event loop is available.
+          Both conditions are true inside FastAPI route handlers and
+          ARQ workers; the test path may not have a loop, in which
+          case we degrade gracefully to stdout-only.
 
         Returns:
-            0 — sentinel. The legacy contract returned a row ID; with
-            stdout-only persistence there's no ID. Callers don't appear to
-            use the return value.
+            0 — legacy sentinel; callers don't read the return value.
         """
         log_method = getattr(_log, ActivityLogger._LEVEL_MAP.get(level, "info"))
         log_method(
@@ -74,6 +209,28 @@ class ActivityLogger:
                 "ip_address": ip_address,
             },
         )
+
+        sm = _sessionmaker
+        if sm is not None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None:
+                loop.create_task(
+                    _persist(
+                        sm,
+                        category=category,
+                        action=action,
+                        message=message,
+                        level=level,
+                        user_uuid=_parse_user_id(user_id),
+                        details=details,
+                        related_id=related_id,
+                        related_type=related_type,
+                        ip_address=ip_address,
+                    )
+                )
         return 0
 
     @staticmethod
@@ -84,12 +241,9 @@ class ActivityLogger:
         offset: int = 0,
         include_all_users: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Return activity logs for an admin viewer.
-
-        Stub: returns []. Stdout-only persistence means no in-app query
-        path. Operators use CloudWatch Logs Insights against the
-        /aws/ecs/connect-<env>/web log group filtered by activity_category.
-        """
+        """Synchronous shim — returns []. Use :func:`alist_logs` from
+        async route handlers; this method survives only because removing
+        it would break import paths in pre-async tests."""
         return []
 
     @staticmethod
@@ -98,7 +252,7 @@ class ActivityLogger:
         user_id: Optional[str] = None,
         include_all_users: bool = False,
     ) -> int:
-        """Count activity logs. Stub: returns 0 (matches list_logs)."""
+        """Synchronous shim — returns 0. Use :func:`acount_logs` instead."""
         return 0
 
     # ============== Application Logs ==============

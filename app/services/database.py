@@ -12,7 +12,6 @@ from __future__ import annotations
 import os
 import ssl
 from collections.abc import AsyncIterator
-from typing import Any
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -114,54 +113,3 @@ async def shutdown_engine() -> None:
         _engine = None
         _sessionmaker = None
         log.info("Postgres engine disposed")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Legacy SQLite-era shim. As of awsk-26h.4 + awsk-uvz the only remaining
-# legacy callers are db.clear_activity_logs / db.create_activity_log — both
-# pending awsk-er5 (Postgres ActivityLog model + repo, currently deferred
-# because activity logs ship to stdout → CloudWatch). The shim catches those
-# with shape-aware safe defaults so the /api/logs/clear endpoint stays a
-# no-op without raising. Remove this whole block once awsk-er5 lands.
-# ─────────────────────────────────────────────────────────────────────────────
-
-_LEGACY_LIST_PREFIXES = ("list_", "get_all_")
-_LEGACY_BOOL_SUFFIXES = ("_exists",)
-_LEGACY_INT_PREFIXES = ("count_", "get_count_")
-
-
-def _legacy_default_for(name: str) -> Any:
-    """Pick a shape-appropriate default value based on the function name."""
-    if name.startswith(_LEGACY_LIST_PREFIXES):
-        return []
-    if name.startswith(_LEGACY_INT_PREFIXES):
-        return 0
-    if name.endswith(_LEGACY_BOOL_SUFFIXES):
-        return False
-    # Everything else (get_*, save_*, set_*, delete_*, init_*, create_*, update_*,
-    # mark_*, clear_*, …) returns None. Side-effect callers ignore it; readers
-    # that expected a row get None and handle it as "not found."
-    return None
-
-
-def __getattr__(name: str) -> Any:
-    """Module-level fallback for legacy `db.*` references.
-
-    Returns a callable that logs a warning and returns the shape-default for
-    `name`. Triggered only when a name isn't otherwise defined in this module
-    — engine/sessionmaker/get_db/shutdown_engine are unaffected.
-    """
-    if name.startswith("_"):
-        raise AttributeError(name)
-
-    default = _legacy_default_for(name)
-
-    def _legacy_stub(*args: Any, **kwargs: Any) -> Any:
-        log.warning(
-            "legacy db.%s called — returning safe default; convert to async repo",
-            name,
-            extra={"legacy_function": name, "default_returned": repr(default)},
-        )
-        return default
-
-    return _legacy_stub

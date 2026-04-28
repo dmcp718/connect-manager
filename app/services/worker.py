@@ -310,8 +310,14 @@ async def _import_job_body(
 
 
 async def on_startup(ctx: dict[str, Any]) -> None:
-    """Called when worker starts — store sessionmaker in context."""
-    ctx["sessionmaker"] = get_sessionmaker()
+    """Called when worker starts — store sessionmaker in context and wire
+    ActivityLogger persistence so worker-emitted activity logs reach
+    Postgres alongside the web tier."""
+    sm = get_sessionmaker()
+    ctx["sessionmaker"] = sm
+    from services.activity_logger import configure_persistence
+
+    configure_persistence(sm)
 
 
 async def on_shutdown(ctx: dict[str, Any]) -> None:
@@ -358,14 +364,19 @@ async def timeout_stale_jobs(ctx: dict[str, Any]) -> int:
 async def cleanup_old_activity_logs(ctx: dict[str, Any]) -> dict[str, Any]:
     """Periodic cleanup of old activity logs (runs daily at 3 AM).
 
-    No-op until awsk-er5 lands an ActivityLog Postgres model + repo.
-    Activity logs currently ship to stdout → CloudWatch Logs only, where
-    retention is governed by the log-group retention policy (set per
-    environment in terraform/modules/ecs-service-*). This cron returns
-    a sentinel result so the job is recorded as completed instead of
-    crashing the worker every night at 03:00.
+    Drops rows older than 30 days from the activity_logs table. Stdout
+    logs are governed separately by the CloudWatch log-group retention
+    policy in terraform/modules/ecs-service-*.
     """
-    return {"status": "skipped", "reason": "stdout-only; awsk-er5 deferred"}
+    from db.repositories.activity_log import ActivityLogRepository
+
+    sm = ctx["sessionmaker"]
+    async with sm() as session:
+        deleted = await ActivityLogRepository(session).clear_old(days=30)
+        await session.commit()
+    if deleted > 0:
+        await publish_log(ctx, f"Cleanup: removed {deleted} old activity log(s)")
+    return {"status": "ok", "deleted": deleted}
 
 
 class WorkerSettings:

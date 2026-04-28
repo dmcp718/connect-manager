@@ -39,7 +39,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -451,6 +451,51 @@ class ProcessedJob(Base):
     result_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
+class ActivityLog(Base):
+    """Audit-style activity log row.
+
+    ActivityLogger.log() emits one of these per significant user action
+    (login, DataStore CRUD, job lifecycle, SQS event processing, admin
+    role changes). Logs also ship to stdout → CloudWatch as structured
+    JSON; this table backs the in-UI filter/list views (logs_app.html
+    et al.) where the admin tabs paginate by category and user_id.
+
+    user_id NULLable: some categories of event (failed login attempt,
+    pre-auth bootstrap actions) have no associated user.
+    """
+
+    __tablename__ = "activity_logs"
+    __table_args__ = (
+        Index("idx_activity_logs_category_created", "category", "created_at"),
+        Index("idx_activity_logs_user_created", "user_id", "created_at"),
+        Index("idx_activity_logs_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    message: Mapped[str] = mapped_column(String, nullable=False)
+    level: Mapped[str] = mapped_column(
+        String, nullable=False, default="info", server_default="info"
+    )
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    related_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    related_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        index=True,
+    )
+
+
 class UserSetting(Base):
     """Per-user key/value setting.
 
@@ -485,6 +530,7 @@ __all__ = [
     "User",
     "UserSession",
     "UserSetting",
+    "ActivityLog",
     "DatastoreCredentials",
     "Datastore",
     "SqsCredentials",
