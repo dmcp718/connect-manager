@@ -15,8 +15,34 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "passlib>=1.7.4",
     "bcrypt>=4.0.0,<4.2.0",
+    "sqlalchemy[asyncio]>=2.0.25,<3",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+    "psycopg[binary]>=3.1",
+    "greenlet>=3.0",
+    "prometheus-client>=0.21.0",
 ]
 
 [tool.setuptools]
 packages = ["services"]
 py-modules = ["main"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.20.2",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
+    "ruff>=0.15.12",
+    "testcontainers[postgres]>=4.7.0",
+    "fakeredis>=2.20.0",
+    "requests>=2.31.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "real_aws: requires real AWS credentials; excluded by default",
+    "slow: takes >30s; excluded from PostCommit hook",
+]
+addopts = "-m 'not real_aws and not slow'"
+testpaths = ["tests"]

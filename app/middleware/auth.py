@@ -18,6 +18,8 @@ PUBLIC_PATHS = [
     "/static",
     "/favicon.ico",
     "/health",
+    "/ready",
+    "/metrics",
 ]
 
 # Cookie name for auth token

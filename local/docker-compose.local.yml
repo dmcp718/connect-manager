@@ -1,0 +1,68 @@
+# Auxiliary data-plane and registry for the local dev loop.
+#
+# These run on the same Docker network as the existing `ministack`
+# container (ministack_default), so kind nodes attached to that network
+# resolve them by service name: postgres, valkey, registry, ministack.
+#
+# Bring up:   docker compose -f local/docker-compose.local.yml up -d
+# Tear down:  docker compose -f local/docker-compose.local.yml down -v
+#
+# The ministack container itself is NOT defined here; it is managed
+# out-of-band on the host and assumed to be running.
+services:
+  postgres:
+    image: postgres:16
+    container_name: connect-local-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: connect
+      POSTGRES_USER: connect
+      POSTGRES_PASSWORD: connect
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U connect -d connect"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ministack
+
+  valkey:
+    image: valkey/valkey:8
+    container_name: connect-local-valkey
+    restart: unless-stopped
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ministack
+
+  registry:
+    image: registry:2
+    container_name: connect-local-registry
+    restart: unless-stopped
+    environment:
+      REGISTRY_HTTP_ADDR: "0.0.0.0:5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - registry-data:/var/lib/registry
+    networks:
+      - ministack
+
+volumes:
+  postgres-data:
+  registry-data:
+
+networks:
+  ministack:
+    name: ministack_default
+    external: true

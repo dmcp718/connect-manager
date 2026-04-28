@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "awsk",
+  "project_id": "d3b4b395-6367-4fe5-b27c-2a3c6a98ad59"
+}

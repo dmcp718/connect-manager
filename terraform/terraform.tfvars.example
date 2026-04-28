@@ -1,9 +1,14 @@
 # Required
-aws_region      = "us-east-1"
 domain          = "connect.example.com"
 route53_zone_id = "Z1234567890ABC"
 
-# Optional
-# instance_type = "t3.small"
-# vpc_cidr      = "10.0.0.0/16"
-# allowed_cidrs = ["1.2.3.4/32"]  # Restrict to your IP for security
+# Optional — defaults shown
+# env                   = "prod"
+# aws_region            = "us-east-1"
+# vpc_cidr              = "10.20.0.0/16"
+# ecr_repo_names        = ["connect-web", "connect-worker"]
+# github_repo           = "dmcp718/connect-manager"
+# rds_instance_class    = "db.t4g.micro"
+# rds_multi_az          = false
+# elasticache_node_type = "cache.t4g.micro"
+# alarms_email          = "alerts@example.com"

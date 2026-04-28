@@ -20,25 +20,42 @@ from services.s3_service import S3Service
 from services.user_state import UserSession, user_state_manager, get_user_session
 from services.job_queue import job_queue
 from services import database as db
+from services.database import shutdown_engine
 from services import auth as auth_service
 from services.activity_logger import ActivityLogger
+from services.shutdown import graceful_lifespan
+from services.metrics import start_metrics_sampler, stop_metrics_sampler
+from services.database import get_engine
 from routes.auth import router as auth_router, get_current_user, get_current_user_optional
+from routes.health import router as health_router
 from middleware.auth import AuthMiddleware
+from middleware.metrics import PrometheusMiddleware
 from models.user import TokenData
+
+
+async def _startup() -> None:
+    auth_service.ensure_jwt_secret_valid()
+    auth_service.ensure_admin_exists()
+    await job_queue.start()
+    # Background sampler for connect_arq_queue_depth + connect_db_pool_in_use.
+    try:
+        engine = get_engine()
+    except Exception:
+        engine = None
+    start_metrics_sampler(engine=engine)
+
+
+async def _shutdown() -> None:
+    await stop_metrics_sampler()
+    await job_queue.stop()
+    await shutdown_engine()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan handler."""
-    # Validate JWT secret before anything else
-    auth_service.ensure_jwt_secret_valid()
-    # Initialize database tables
-    db.init_db()
-    # Ensure at least one admin user exists
-    auth_service.ensure_admin_exists()
-    await job_queue.start()
-    yield
-    await job_queue.stop()
+    """Application lifespan handler with graceful SIGTERM drain."""
+    async with graceful_lifespan(app, startup=_startup, shutdown=_shutdown):
+        yield
 
 
 app = FastAPI(
@@ -47,11 +64,16 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add authentication middleware
+# Middleware order matters: Starlette executes added middleware in REVERSE
+# order, so the LAST add_middleware wraps the OUTERMOST request. We want
+# Prometheus instrumentation to wrap the entire stack (including auth) so
+# 401s show up in the request counter — add it last.
 app.add_middleware(AuthMiddleware)
+app.add_middleware(PrometheusMiddleware)
 
-# Include auth routes
+# Include routers
 app.include_router(auth_router)
+app.include_router(health_router)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -67,14 +89,6 @@ def get_session_from_request(request: Request) -> UserSession:
     if not user_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return get_user_session(user_id)
-
-
-# ============== Health Check ==============
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint (no auth required)."""
-    return {"status": "healthy"}
 
 
 # ============== Pages ==============

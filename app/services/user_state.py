@@ -3,20 +3,37 @@ Per-User State Management
 Replaces the global AppState with user-scoped sessions
 """
 
+from __future__ import annotations
+
 import asyncio
 from datetime import datetime
-from typing import Optional, Dict, List, Any
+from typing import Any, Dict, List, Optional, Sequence
 from dataclasses import dataclass, field
+import uuid
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.lucidlink import LucidLinkClient
 from services.s3_service import S3Service
 from services import database as db
 from services import secrets
+from services.state import (
+    delete_datastore_credentials,
+    delete_sqs_credentials,
+    get_datastore_credentials,
+    get_sqs_credentials,
+    list_all_datastore_credentials,
+    list_sqs_credentials,
+    list_sqs_queues,
+    save_datastore_credentials,
+    save_sqs_credentials,
+)
 
 
 @dataclass
 class UserSession:
     """Per-user session state."""
+
     user_id: str
 
     # Connection state
@@ -26,7 +43,9 @@ class UserSession:
 
     # LucidLink state
     filespaces: Dict[str, str] = field(default_factory=dict)  # name -> id
-    datastores: Dict[str, dict] = field(default_factory=dict)  # name -> {id, name, bucket, ...}
+    datastores: Dict[str, dict] = field(
+        default_factory=dict
+    )  # name -> {id, name, bucket, ...}
     selected_filespace: str = ""
     selected_datastore: str = ""
     ll_client: Optional[LucidLinkClient] = None
@@ -165,7 +184,9 @@ class UserSession:
                 if datastore_id in self.datastore_credentials:
                     del self.datastore_credentials[datastore_id]
 
-                self.log(f"Removed DataStore credentials: {cred.get('datastore_name', 'Unknown')}")
+                self.log(
+                    f"Removed DataStore credentials: {cred.get('datastore_name', 'Unknown')}"
+                )
                 return True
         return False
 
@@ -192,7 +213,7 @@ class UserSession:
 
         # Trim old logs
         if len(self.logs) > self._max_logs:
-            self.logs = self.logs[-self._max_logs:]
+            self.logs = self.logs[-self._max_logs :]
 
 
 class UserStateManager:
@@ -243,3 +264,103 @@ user_state_manager = UserStateManager()
 def get_user_session(user_id: str) -> UserSession:
     """Convenience function to get a user's session."""
     return user_state_manager.get_session(user_id)
+
+
+# ── Per-user async wrappers ───────────────────────────────────────────────────
+# Thin wrappers over the functions in services.state that fix user_id.
+# These are the call-sites for routes/main that operate in multi-user mode.
+
+
+async def save_user_datastore_credentials(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    datastore_id: str,
+    datastore_name: str,
+    filespace_id: str,
+    filespace_name: str,
+    bucket_name: str,
+    access_key: str,
+    secret_key: str,
+    region: Optional[str] = None,
+    endpoint: Optional[str] = None,
+) -> Any:
+    return await save_datastore_credentials(
+        session,
+        datastore_id=datastore_id,
+        datastore_name=datastore_name,
+        filespace_id=filespace_id,
+        filespace_name=filespace_name,
+        bucket_name=bucket_name,
+        access_key=access_key,
+        secret_key=secret_key,
+        region=region,
+        endpoint=endpoint,
+        user_id=user_id,
+    )
+
+
+async def get_user_datastore_credentials(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    datastore_id: str,
+) -> Optional[Dict[str, Any]]:
+    return await get_datastore_credentials(session, datastore_id, user_id=user_id)
+
+
+async def delete_user_datastore_credentials(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    datastore_id: str,
+) -> bool:
+    return await delete_datastore_credentials(session, datastore_id, user_id=user_id)
+
+
+async def list_user_datastore_credentials(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> List[Dict[str, Any]]:
+    return await list_all_datastore_credentials(session, user_id=user_id)
+
+
+async def save_user_sqs_credentials(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    access_key: str,
+    secret_key: str,
+    region: str,
+) -> Any:
+    return await save_sqs_credentials(
+        session,
+        access_key=access_key,
+        secret_key=secret_key,
+        region=region,
+        user_id=user_id,
+    )
+
+
+async def get_user_sqs_credentials(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> Optional[Dict[str, Any]]:
+    return await get_sqs_credentials(session, user_id=user_id)
+
+
+async def list_user_sqs_credentials(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> List[Dict[str, Any]]:
+    return await list_sqs_credentials(session, user_id=user_id)
+
+
+async def delete_user_sqs_credentials(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> bool:
+    return await delete_sqs_credentials(session, user_id=user_id)
+
+
+async def list_user_sqs_queues(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> Sequence[Any]:
+    return await list_sqs_queues(session, user_id=user_id)

@@ -1,0 +1,4 @@
+# Runtime-only Claude Code artifacts — not for git.
+settings.local.json
+worktrees/
+projects/

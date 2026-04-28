@@ -18,10 +18,21 @@ RUN pip install --no-cache-dir \
     "arq>=0.26.0" \
     "python-jose[cryptography]>=3.3.0" \
     "passlib>=1.7.4" \
-    "bcrypt>=4.0.0,<4.2.0"
+    "bcrypt>=4.0.0,<4.2.0" \
+    "sqlalchemy[asyncio]>=2.0.25,<3" \
+    "asyncpg>=0.29.0" \
+    "alembic>=1.13.0" \
+    "psycopg[binary]>=3.1" \
+    "greenlet>=3.0" \
+    "prometheus-client>=0.21.0"
 
 # Copy application code
 COPY app/ .
+
+# Copy alembic config so the migration Job (helm/connect-manager pre-install hook)
+# can run `cd /migrations && alembic upgrade head`.
+COPY alembic.ini /migrations/alembic.ini
+COPY alembic/ /migrations/alembic/
 
 # Create data directory for SQLite
 RUN mkdir -p /data

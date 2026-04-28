@@ -33,11 +33,11 @@ build/
 docs/site/
 
 # Terraform
-terraform/.terraform/
+**/.terraform/
+**/.terraform.lock.hcl
 terraform/*.tfstate
 terraform/*.tfstate.backup
 terraform/terraform.tfvars
-terraform/.terraform.lock.hcl
 terraform/crash.log
 
 # Project-specific excludes
@@ -45,3 +45,7 @@ brand_guidelines/
 lab_icon/
 s3_python9_fast.py
 flask_icon.png
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
