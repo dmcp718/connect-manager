@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Sequence
 
-from sqlalchemy import select, update as sa_update
+from sqlalchemy import delete as sa_delete, select, update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -101,6 +101,40 @@ class JobRepository(AsyncRepository[Job, int]):
             .where(Job.status == "running", Job.started_at < cutoff)
             .values(status="failed", error_message="timed out")
         )
+        raw = await self._session.execute(stmt)
+        cursor: CursorResult[tuple[()]] = raw  # type: ignore[assignment]
+        await self._session.flush()
+        return cursor.rowcount
+
+    async def delete_for_user(self, job_id: int, user_id: Optional[uuid.UUID]) -> bool:
+        """Delete a job, but only if it belongs to *user_id* (or to no user
+        when *user_id* is None). Returns True if a row was removed.
+
+        Multi-user mode requires this scoped check so a route handler can't
+        be tricked into deleting another user's history by guessing IDs.
+        Callers must commit.
+        """
+        if user_id is None:
+            stmt = sa_delete(Job).where(Job.id == job_id, Job.user_id.is_(None))
+        else:
+            stmt = sa_delete(Job).where(Job.id == job_id, Job.user_id == user_id)
+        raw = await self._session.execute(stmt)
+        cursor: CursorResult[tuple[()]] = raw  # type: ignore[assignment]
+        await self._session.flush()
+        return cursor.rowcount > 0
+
+    async def clear_completed_for_user(self, user_id: Optional[uuid.UUID]) -> int:
+        """Bulk-delete this user's terminal-state jobs (completed/failed/
+        cancelled). Running and pending jobs are preserved. Returns the
+        count of rows removed. Callers must commit.
+        """
+        terminal = ("completed", "failed", "cancelled")
+        if user_id is None:
+            stmt = sa_delete(Job).where(Job.user_id.is_(None), Job.status.in_(terminal))
+        else:
+            stmt = sa_delete(Job).where(
+                Job.user_id == user_id, Job.status.in_(terminal)
+            )
         raw = await self._session.execute(stmt)
         cursor: CursorResult[tuple[()]] = raw  # type: ignore[assignment]
         await self._session.flush()

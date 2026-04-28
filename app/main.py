@@ -7,20 +7,23 @@ DataStore-centric architecture with multi-user support
 import asyncio
 import json
 import os
+import uuid
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi import Depends, FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from db.repositories.job import JobRepository
 from services.lucidlink import LucidLinkClient, LL_HOST
 from services.s3_service import S3Service
 from services.user_state import UserSession, get_user_session
 from services.job_queue import job_queue
 from services import database as db
-from services.database import shutdown_engine
+from services.database import get_db, shutdown_engine
 from services import auth as auth_service
 from services.activity_logger import ActivityLogger
 from services.shutdown import graceful_lifespan
@@ -1062,13 +1065,23 @@ async def cancel_job(request: Request, job_id: int):
 
 
 @app.delete("/api/jobs/{job_id}", response_class=HTMLResponse)
-async def delete_job(request: Request, job_id: int):
+async def delete_job(
+    request: Request,
+    job_id: int,
+    session: AsyncSession = Depends(get_db),
+):
     """Delete a job from history."""
     _ = get_session_from_request(request)  # Verify authenticated
-    user_id = getattr(request.state, "user_id", None)
-    db.delete_job(job_id, user_id=user_id)
-    jobs = await job_queue.get_jobs(user_id=user_id)
-    status = await job_queue.get_queue_status(user_id=user_id)
+    user_id_str = getattr(request.state, "user_id", None)
+    parsed_user_id: Optional[uuid.UUID] = (
+        uuid.UUID(user_id_str) if user_id_str else None
+    )
+    repo = JobRepository(session)
+    await repo.delete_for_user(job_id, parsed_user_id)
+    await session.commit()
+
+    jobs = await job_queue.get_jobs(user_id=user_id_str)
+    status = await job_queue.get_queue_status(user_id=user_id_str)
 
     return templates.TemplateResponse(
         "partials/job_queue.html",
@@ -1081,13 +1094,22 @@ async def delete_job(request: Request, job_id: int):
 
 
 @app.post("/api/jobs/clear", response_class=HTMLResponse)
-async def clear_jobs(request: Request):
+async def clear_jobs(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
     """Clear completed jobs."""
     _ = get_session_from_request(request)  # Verify authenticated
-    user_id = getattr(request.state, "user_id", None)
-    db.clear_completed_jobs(user_id=user_id)
-    jobs = await job_queue.get_jobs(user_id=user_id)
-    status = await job_queue.get_queue_status(user_id=user_id)
+    user_id_str = getattr(request.state, "user_id", None)
+    parsed_user_id: Optional[uuid.UUID] = (
+        uuid.UUID(user_id_str) if user_id_str else None
+    )
+    repo = JobRepository(session)
+    await repo.clear_completed_for_user(parsed_user_id)
+    await session.commit()
+
+    jobs = await job_queue.get_jobs(user_id=user_id_str)
+    status = await job_queue.get_queue_status(user_id=user_id_str)
 
     return templates.TemplateResponse(
         "partials/job_queue.html",

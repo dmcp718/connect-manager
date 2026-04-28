@@ -309,6 +309,138 @@ async def test_timeout_stale_marks_running_jobs(db_session: AsyncSession) -> Non
     assert fresh_row.status == "running"
 
 
+# ── delete_for_user / clear_completed_for_user ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_delete_for_user_removes_owned_job(db_session: AsyncSession) -> None:
+    """delete_for_user returns True and removes the row when ownership matches."""
+    owner = await _create_user(db_session)
+    repo = JobRepository(db_session)
+
+    job = await repo.create_job(
+        user_id=owner,
+        bucket="b",
+        prefix="p/",
+        filespace_id="fs",
+        datastore_id="ds",
+    )
+    await db_session.commit()
+
+    deleted = await repo.delete_for_user(job.id, owner)
+    await db_session.commit()
+    assert deleted is True
+    assert await repo.get(job.id) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_for_user_rejects_other_user(db_session: AsyncSession) -> None:
+    """delete_for_user returns False and leaves the row intact for non-owners."""
+    owner = await _create_user(db_session)
+    other = await _create_user(db_session)
+    repo = JobRepository(db_session)
+
+    job = await repo.create_job(
+        user_id=owner,
+        bucket="b",
+        prefix="p/",
+        filespace_id="fs",
+        datastore_id="ds",
+    )
+    await db_session.commit()
+
+    deleted = await repo.delete_for_user(job.id, other)
+    await db_session.commit()
+    assert deleted is False
+    survivor = await repo.get(job.id)
+    assert survivor is not None
+    assert survivor.user_id == owner
+
+
+@pytest.mark.asyncio
+async def test_clear_completed_for_user_keeps_active_jobs(
+    db_session: AsyncSession,
+) -> None:
+    """clear_completed_for_user removes completed/failed/cancelled but keeps
+    pending and running jobs."""
+    user_id = await _create_user(db_session)
+    repo = JobRepository(db_session)
+
+    pending_job = await repo.create_job(
+        user_id=user_id,
+        bucket="b",
+        prefix="pending/",
+        filespace_id="fs",
+        datastore_id="ds",
+    )
+    running_job = await repo.create_job(
+        user_id=user_id,
+        bucket="b",
+        prefix="running/",
+        filespace_id="fs",
+        datastore_id="ds",
+    )
+    completed_job = await repo.create_job(
+        user_id=user_id,
+        bucket="b",
+        prefix="done/",
+        filespace_id="fs",
+        datastore_id="ds",
+    )
+    failed_job = await repo.create_job(
+        user_id=user_id,
+        bucket="b",
+        prefix="failed/",
+        filespace_id="fs",
+        datastore_id="ds",
+    )
+    cancelled_job = await repo.create_job(
+        user_id=user_id,
+        bucket="b",
+        prefix="cancelled/",
+        filespace_id="fs",
+        datastore_id="ds",
+    )
+    await repo.update_status(running_job.id, status="running")
+    await repo.update_status(completed_job.id, status="completed")
+    await repo.update_status(failed_job.id, status="failed")
+    await repo.update_status(cancelled_job.id, status="cancelled")
+    await db_session.commit()
+
+    removed = await repo.clear_completed_for_user(user_id)
+    await db_session.commit()
+    assert removed == 3
+
+    survivors = await repo.list_for_user(user_id)
+    survivor_ids = {j.id for j in survivors}
+    assert survivor_ids == {pending_job.id, running_job.id}
+
+
+@pytest.mark.asyncio
+async def test_clear_completed_for_user_isolates_users(
+    db_session: AsyncSession,
+) -> None:
+    """clear_completed_for_user must not touch another user's completed jobs."""
+    owner = await _create_user(db_session)
+    other = await _create_user(db_session)
+    repo = JobRepository(db_session)
+
+    owner_done = await repo.create_job(
+        user_id=owner, bucket="b", prefix="o/", filespace_id="fs", datastore_id="ds"
+    )
+    other_done = await repo.create_job(
+        user_id=other, bucket="b", prefix="x/", filespace_id="fs", datastore_id="ds"
+    )
+    await repo.update_status(owner_done.id, status="completed")
+    await repo.update_status(other_done.id, status="completed")
+    await db_session.commit()
+
+    removed = await repo.clear_completed_for_user(owner)
+    await db_session.commit()
+    assert removed == 1
+    assert await repo.get(other_done.id) is not None
+
+
 # ── ProcessedJobRepository tests ──────────────────────────────────────────────
 
 
