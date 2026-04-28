@@ -1,20 +1,46 @@
+"""SQS Polling Service - integrated with ARQ workers.
+
+Polls every active SQS queue for S3 event notifications and creates import
+records. Uses a Valkey-backed distributed lock so only one worker polls at
+a time, preventing duplicate message processing across replicas.
+
+Database access goes through the async repositories:
+- SqsQueueRepository for the active-queue list and per-queue mark/error
+  updates.
+- SqsCredentialsRepository for per-user IAM creds.
+- SqsEventRepository for idempotency probe + status transitions.
+- DatastoreCredentialsRepository for the per-event DataStore lookup
+  (metadata only — `bucket_name`, etc. — no Fernet decryption needed
+  here).
+
+The cron entrypoint owns its own session lifecycle: ``ctx["sessionmaker"]``
+is set by ``services.worker.on_startup``. Every DB-touching helper accepts
+an ``AsyncSession`` so the cron can scope a single session per queue and
+commit explicitly.
 """
-SQS Polling Service - Integrated with ARQ workers.
-Polls active SQS queues for S3 event notifications and creates import jobs.
-Uses distributed locking to ensure only one worker polls at a time.
-"""
+
+from __future__ import annotations
 
 import os
 import uuid
-from typing import Any, Dict
+from datetime import datetime
+from typing import Any, Dict, Optional
 
 from arq import cron
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from services import database as db
-from services import secrets
-from services.sqs_service import SQSService, SQSError
-from services.lucidlink import LucidLinkClient
+from db.repositories.datastore import (
+    DatastoreCredentialsRepository,
+    SqsEventRepository,
+    SqsQueueRepository,
+)
+from services import secrets, state as state_helpers
 from services.activity_logger import ActivityLogger
+from services.logging import get_logger
+from services.lucidlink import LucidLinkClient
+from services.sqs_service import SQSError, SQSService
+
+_log = get_logger("sqs_poller")
 
 # Lock key for distributed polling
 POLL_LOCK_KEY = "sqs:poll:lock"
@@ -22,38 +48,13 @@ POLL_LOCK_TTL = 60  # seconds
 
 
 async def acquire_poll_lock(redis, worker_id: str) -> bool:
-    """
-    Acquire distributed lock for SQS polling.
-    Uses SET NX EX pattern for atomic lock acquisition.
-
-    Args:
-        redis: Redis/Valkey connection
-        worker_id: Unique identifier for this worker
-
-    Returns:
-        True if lock acquired, False if another worker holds it
-    """
-    result = await redis.set(
-        POLL_LOCK_KEY,
-        worker_id,
-        nx=True,  # Only set if not exists
-        ex=POLL_LOCK_TTL,  # Expire after TTL
-    )
+    """Atomic SET NX EX — returns True iff this worker now holds the lock."""
+    result = await redis.set(POLL_LOCK_KEY, worker_id, nx=True, ex=POLL_LOCK_TTL)
     return result is not None
 
 
 async def release_poll_lock(redis, worker_id: str) -> bool:
-    """
-    Release the poll lock if we own it.
-
-    Args:
-        redis: Redis/Valkey connection
-        worker_id: Our worker ID
-
-    Returns:
-        True if released, False if we didn't own it
-    """
-    # Lua script for atomic check-and-delete
+    """Release the poll lock if we own it (atomic check-and-delete via Lua)."""
     script = """
     if redis.call("get", KEYS[1]) == ARGV[1] then
         return redis.call("del", KEYS[1])
@@ -68,69 +69,70 @@ async def release_poll_lock(redis, worker_id: str) -> bool:
         return False
 
 
+def _resolve_user_id(value: Any) -> Optional[uuid.UUID]:
+    """Coerce queue.user_id (Optional[UUID|str]) to Optional[UUID]."""
+    if value is None:
+        return None
+    if isinstance(value, uuid.UUID):
+        return value
+    return uuid.UUID(str(value))
+
+
 async def poll_sqs_queues(ctx: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Poll all active SQS queues for new messages.
-    This is called as an ARQ cron job every 30 seconds.
+    """ARQ cron entrypoint — poll every active queue once.
 
-    Uses distributed locking to ensure only one worker polls at a time,
-    preventing duplicate message processing.
-
-    Args:
-        ctx: ARQ context with redis connection
-
-    Returns:
-        Summary of polling results
+    Acquires the distributed lock, snapshots the active-queue list with one
+    session, then per-queue spins a fresh session for the queue's
+    credentials + per-event work. The fresh-session-per-queue pattern keeps
+    one slow queue from holding a connection for the whole sweep.
     """
     redis = ctx.get("redis")
+    sm: async_sessionmaker[AsyncSession] = ctx["sessionmaker"]
     worker_id = f"worker-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
-    # Try to acquire lock
     if not await acquire_poll_lock(redis, worker_id):
         return {"status": "skipped", "reason": "another worker is polling"}
 
     try:
-        # Get active queues (from all users - poller needs to process all)
-        queues = db.list_active_sqs_queues()
+        async with sm() as session:
+            queue_repo = SqsQueueRepository(session)
+            queues = list(await queue_repo.list_active())
         if not queues:
             return {"status": "ok", "queues_polled": 0, "events_processed": 0}
 
         total_events = 0
-        errors = []
-
-        # Group queues by (user_id, region) for efficient client reuse
-        # Each user has their own SQS credentials
-        sqs_clients = {}  # key: (user_id, region) -> SQSService
+        errors: list[str] = []
+        sqs_clients: dict[tuple[Optional[uuid.UUID], str], SQSService] = {}
 
         for queue in queues:
             try:
-                # Get user's SQS credentials for this queue
-                user_id = queue.get("user_id")
-                sqs_creds = db.get_sqs_credentials(user_id=user_id)
-                if not sqs_creds:
-                    db.update_sqs_queue(
-                        queue["id"],
-                        error_message="No SQS credentials configured for user",
+                user_id = _resolve_user_id(queue.user_id)
+                async with sm() as session:
+                    sqs_creds = await state_helpers.get_sqs_credentials(
+                        session, user_id
                     )
+                if sqs_creds is None:
+                    async with sm() as session:
+                        await SqsQueueRepository(session).set_error(
+                            queue.id, "No SQS credentials configured for user"
+                        )
+                        await session.commit()
                     continue
 
-                # Decrypt secret key
-                access_key = sqs_creds.get("access_key")
-                secret_key_encrypted = sqs_creds.get("secret_key_encrypted")
-                secret_key = secrets.get_secret(f"sqs_secret_{secret_key_encrypted}")
+                access_key = sqs_creds["access_key"]
+                # state.get_sqs_credentials Fernet-decrypts the secret on
+                # read, so secret_key here is already plaintext.
+                secret_key = sqs_creds["secret_key"]
 
                 if not access_key or not secret_key:
-                    db.update_sqs_queue(
-                        queue["id"], error_message="Invalid SQS credentials"
-                    )
+                    async with sm() as session:
+                        await SqsQueueRepository(session).set_error(
+                            queue.id, "Invalid SQS credentials"
+                        )
+                        await session.commit()
                     continue
 
-                # Use queue's region
-                queue_region = queue.get("region") or sqs_creds.get(
-                    "region", "us-east-1"
-                )
-
-                # Get or create SQS client for this user+region combination
+                queue_region = queue.region or sqs_creds.get("region") or "us-east-1"
                 client_key = (user_id, queue_region)
                 if client_key not in sqs_clients:
                     sqs_clients[client_key] = SQSService(
@@ -138,16 +140,21 @@ async def poll_sqs_queues(ctx: Dict[str, Any]) -> Dict[str, Any]:
                     )
 
                 sqs = sqs_clients[client_key]
-                events_count = await poll_single_queue(ctx, sqs, queue)
+                events_count = await poll_single_queue(ctx, sm, sqs, queue)
                 total_events += events_count
 
-                # Update last poll time
-                db.update_sqs_queue(queue["id"], last_poll_at=True, error_message="")
+                async with sm() as session:
+                    await SqsQueueRepository(session).mark_polled(
+                        queue.id, error_message=None
+                    )
+                    await session.commit()
 
             except Exception as e:
                 error_msg = str(e)[:200]
-                errors.append(f"{queue['name']}: {error_msg}")
-                db.update_sqs_queue(queue["id"], error_message=error_msg)
+                errors.append(f"{queue.name}: {error_msg}")
+                async with sm() as session:
+                    await SqsQueueRepository(session).set_error(queue.id, error_msg)
+                    await session.commit()
 
         return {
             "status": "ok",
@@ -157,32 +164,20 @@ async def poll_sqs_queues(ctx: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     finally:
-        # Always release lock
         await release_poll_lock(redis, worker_id)
 
 
 async def poll_single_queue(
     ctx: Dict[str, Any],
+    sm: async_sessionmaker[AsyncSession],
     sqs: SQSService,
-    queue: Dict[str, Any],
+    queue,  # SqsQueue ORM row
 ) -> int:
-    """
-    Poll a single SQS queue and process messages.
+    """Receive up to 10 messages from one queue and process each."""
+    queue_url = queue.queue_url
+    queue_id = queue.id
 
-    Args:
-        ctx: ARQ context
-        sqs: SQS service instance
-        queue: Queue configuration from database
-
-    Returns:
-        Number of events processed
-    """
-    queue_url = queue["queue_url"]
-    queue_id = queue["id"]
-
-    # Receive messages (short poll to avoid blocking)
     messages = sqs.receive_messages(queue_url, max_messages=10, wait_time_seconds=0)
-
     events_processed = 0
 
     for message in messages:
@@ -190,125 +185,126 @@ async def poll_single_queue(
         receipt_handle = message.get("ReceiptHandle", "")
         body = message.get("Body", "")
 
-        # Parse S3 events from message
         s3_events = SQSService.parse_s3_events(body)
 
         for event in s3_events:
-            # Only process object creation events
             if not SQSService.is_create_event(event.get("event_type", "")):
                 continue
 
-            # Process this event
             try:
-                await process_s3_event(ctx, event, queue, message_id)
+                await process_s3_event(ctx, sm, event, queue, message_id)
                 events_processed += 1
             except Exception as e:
-                # Log error but continue processing other events
-                event_id = f"{queue_id}-{message_id}-{events_processed}"
-                db.create_sqs_event(
-                    event_id=event_id,
-                    queue_id=queue_id,
-                    message_id=message_id,
-                    event_type=event.get("event_type", "unknown"),
-                    bucket=event.get("bucket", ""),
-                    object_key=event.get("key", ""),
-                    object_size=event.get("size"),
-                    event_time=event.get("event_time"),
-                )
-                db.update_sqs_event(
-                    event_id, status="failed", error_message=str(e)[:200]
-                )
+                # Best-effort: record the failed event so it shows up in the
+                # admin SQS log. We synthesize a fresh UUID per failure
+                # because we never inserted the row above.
+                async with sm() as session:
+                    repo = SqsEventRepository(session)
+                    row = await repo.create_event(
+                        queue_id=queue_id,
+                        message_id=message_id,
+                        event_type=event.get("event_type", "unknown"),
+                        bucket=event.get("bucket", ""),
+                        object_key=event.get("key", ""),
+                        object_size=event.get("size"),
+                        event_time=_parse_event_time(event.get("event_time")),
+                    )
+                    await repo.update_status(
+                        row.id, status="failed", error_message=str(e)[:200]
+                    )
+                    await session.commit()
 
-        # Delete message after processing (even if some events failed)
+        # Delete the message from SQS even if some events inside it failed —
+        # they're recorded; another redelivery would only duplicate.
         try:
             sqs.delete_message(queue_url, receipt_handle)
         except SQSError:
-            pass  # Message will become visible again after visibility timeout
+            pass
 
     return events_processed
 
 
 async def process_s3_event(
     ctx: Dict[str, Any],
+    sm: async_sessionmaker[AsyncSession],
     event: Dict[str, Any],
-    queue: Dict[str, Any],
+    queue,  # SqsQueue ORM row
     message_id: str,
 ) -> None:
-    """
-    Process a single S3 event - create import job.
-
-    Uses idempotent processing to prevent duplicate imports when SQS
-    redelivers messages (e.g., after visibility timeout or failed deletion).
-
-    Args:
-        ctx: ARQ context
-        event: Parsed S3 event
-        queue: Queue configuration
-        message_id: SQS message ID
-    """
-    queue_id = queue["id"]
-    datastore_id = queue["datastore_id"]
-    filespace_id = queue["filespace_id"]
-    import_prefix = queue.get("import_prefix", "")
-    user_id = queue.get("user_id")
+    """Idempotently turn one S3 event into a LucidLink import."""
+    queue_id = queue.id
+    datastore_id = queue.datastore_id
+    filespace_id = queue.filespace_id
+    import_prefix = queue.import_prefix or ""
+    user_id = _resolve_user_id(queue.user_id)
 
     bucket = event.get("bucket", "")
     object_key = event.get("key", "")
     object_size = event.get("size")
     event_type = event.get("event_type", "")
-    event_time = event.get("event_time")
+    event_time = _parse_event_time(event.get("event_time"))
 
-    # Idempotency check: skip if we've already processed this exact event
-    # Uses idx_sqs_events_message_id index for fast lookup
-    if db.sqs_event_exists(message_id, queue_id, object_key):
-        return  # Already processed, skip silently
+    # Idempotency: skip if the same (message_id, queue_id, object_key) was
+    # already recorded.
+    async with sm() as session:
+        events_repo = SqsEventRepository(session)
+        if await events_repo.exists_for_message(message_id, queue_id, object_key):
+            return
 
-    # Generate unique event ID
-    event_id = f"{uuid.uuid4().hex}"
-
-    # Record the event
-    db.create_sqs_event(
-        event_id=event_id,
-        queue_id=queue_id,
-        message_id=message_id,
-        event_type=event_type,
-        bucket=bucket,
-        object_key=object_key,
-        object_size=object_size,
-        event_time=event_time,
-    )
-
-    # Get DataStore credentials for S3 access (user-specific in multi-user mode)
-    cred = db.get_datastore_credentials(datastore_id, user_id=user_id)
-    if not cred:
-        db.update_sqs_event(
-            event_id,
-            status="failed",
-            error_message="DataStore credentials not found",
+        row = await events_repo.create_event(
+            queue_id=queue_id,
+            message_id=message_id,
+            event_type=event_type,
+            bucket=bucket,
+            object_key=object_key,
+            object_size=object_size,
+            event_time=event_time,
         )
+        event_id = row.id
+        await session.commit()
+
+    # DataStore lookup — metadata only, so no Fernet decrypt needed.
+    async with sm() as session:
+        ds_cred = await DatastoreCredentialsRepository(session).get_for_datastore_user(
+            datastore_id, user_id
+        )
+    if ds_cred is None:
+        async with sm() as session:
+            await SqsEventRepository(session).update_status(
+                event_id,
+                status="failed",
+                error_message="DataStore credentials not found",
+            )
+            await session.commit()
         return
 
-    # Get LucidLink API token for the user who created this queue
     token = (
-        secrets.get_user_token(user_id) if user_id else secrets.get_lucidlink_token()
+        secrets.get_user_token(str(user_id))
+        if user_id
+        else secrets.get_lucidlink_token()
     )
     if not token:
-        db.update_sqs_event(
-            event_id,
-            status="failed",
-            error_message="LucidLink API token not configured - please reconnect in Settings",
-        )
+        async with sm() as session:
+            await SqsEventRepository(session).update_status(
+                event_id,
+                status="failed",
+                error_message=(
+                    "LucidLink API token not configured - please reconnect in Settings"
+                ),
+            )
+            await session.commit()
         return
 
-    # Get API host (user-specific in multi-user mode)
-    api_host_key = f"api_host_{user_id}" if user_id else "api_host"
-    api_host = db.get_setting(api_host_key) or ""
+    # api_host persistence is currently absent (legacy db.get_setting was
+    # SQLite-only and was removed during the Postgres rewrite). Falling back
+    # to "" lets LucidLinkClient use its default LL_HOST. Tracked separately.
+    api_host = ""
 
-    # Update event status to processing
-    db.update_sqs_event(event_id, status="processing")
+    async with sm() as session:
+        await SqsEventRepository(session).update_status(event_id, status="processing")
+        await session.commit()
 
     try:
-        # Initialize LucidLink client
         ll_client = LucidLinkClient(api_host=api_host)
         ll_client.configure(
             token=token,
@@ -317,60 +313,67 @@ async def process_s3_event(
             api_host=api_host,
         )
 
-        # Build destination path
-        # Pattern: /<bucket>/<prefix>/<key> or /<bucket>/<key>
         if import_prefix:
-            # Clean prefix (remove leading/trailing slashes)
             prefix_clean = import_prefix.strip("/")
             ll_path = f"/{bucket}/{prefix_clean}/{object_key}"
         else:
             ll_path = f"/{bucket}/{object_key}"
 
-        # Ensure folder structure exists
         structure_ok, structure_error = await ll_client.ensure_structure(ll_path)
 
-        # Get queue name for logging
-        queue_name = queue.get("name", queue_id[:8])
+        queue_name = queue.name or str(queue_id)[:8]
 
         if structure_ok:
-            # Import the file
             code, error_msg = await ll_client.import_file(object_key, ll_path)
 
-            if code in [200, 201]:
-                db.update_sqs_event(event_id, status="completed")
-                # Log successful SQS event processing
+            if code in (200, 201):
+                async with sm() as session:
+                    await SqsEventRepository(session).update_status(
+                        event_id, status="completed"
+                    )
+                    await session.commit()
                 ActivityLogger.sqs_event_processed(
-                    user_id, queue_id, queue_name, object_key, "success"
+                    str(user_id) if user_id else None,
+                    str(queue_id),
+                    queue_name,
+                    object_key,
+                    "success",
                 )
-            elif code in [400, 409] and "already exists" in error_msg.lower():
-                db.update_sqs_event(
-                    event_id, status="skipped", error_message="Already exists"
-                )
+            elif code in (400, 409) and "already exists" in error_msg.lower():
+                async with sm() as session:
+                    await SqsEventRepository(session).update_status(
+                        event_id,
+                        status="skipped",
+                        error_message="Already exists",
+                    )
+                    await session.commit()
             else:
-                db.update_sqs_event(
-                    event_id,
-                    status="failed",
-                    error_message=f"HTTP {code}: {error_msg[:150]}",
-                )
-                # Log failed SQS event
+                async with sm() as session:
+                    await SqsEventRepository(session).update_status(
+                        event_id,
+                        status="failed",
+                        error_message=f"HTTP {code}: {error_msg[:150]}",
+                    )
+                    await session.commit()
                 ActivityLogger.sqs_event_processed(
-                    user_id,
-                    queue_id,
+                    str(user_id) if user_id else None,
+                    str(queue_id),
                     queue_name,
                     object_key,
                     "failed",
                     error=f"HTTP {code}: {error_msg[:100]}",
                 )
         else:
-            db.update_sqs_event(
-                event_id,
-                status="failed",
-                error_message=f"Failed to create folder: {structure_error[:150]}",
-            )
-            # Log failed SQS event
+            async with sm() as session:
+                await SqsEventRepository(session).update_status(
+                    event_id,
+                    status="failed",
+                    error_message=f"Failed to create folder: {structure_error[:150]}",
+                )
+                await session.commit()
             ActivityLogger.sqs_event_processed(
-                user_id,
-                queue_id,
+                str(user_id) if user_id else None,
+                str(queue_id),
                 queue_name,
                 object_key,
                 "failed",
@@ -380,14 +383,35 @@ async def process_s3_event(
         await ll_client.close()
 
     except Exception as e:
-        db.update_sqs_event(event_id, status="failed", error_message=str(e)[:200])
-        # Log failed SQS event
-        queue_name = queue.get("name", queue_id[:8])
+        async with sm() as session:
+            await SqsEventRepository(session).update_status(
+                event_id, status="failed", error_message=str(e)[:200]
+            )
+            await session.commit()
+        queue_name = queue.name or str(queue_id)[:8]
         ActivityLogger.sqs_event_processed(
-            user_id, queue_id, queue_name, object_key, "failed", error=str(e)[:100]
+            str(user_id) if user_id else None,
+            str(queue_id),
+            queue_name,
+            object_key,
+            "failed",
+            error=str(e)[:100],
         )
 
 
-# Cron job configuration for ARQ
-# Runs every 10 seconds
+def _parse_event_time(value: Any) -> Optional[datetime]:
+    """Best-effort parse of S3 event time strings into datetime."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        # S3 event times are ISO-8601 with optional 'Z' suffix.
+        text = str(value).replace("Z", "+00:00")
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+# Cron job configuration for ARQ — runs every 10 seconds.
 sqs_poll_cron = cron(poll_sqs_queues, second={0, 10, 20, 30, 40, 50})

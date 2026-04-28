@@ -17,10 +17,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import User
-from db.repositories.datastore import DatastoreCredentialsRepository
+from db.models import SqsCredentials, SqsEvent, SqsQueue, User
+from db.repositories.datastore import (
+    DatastoreCredentialsRepository,
+    SqsCredentialsRepository,
+    SqsEventRepository,
+    SqsQueueRepository,
+)
 from db.repositories.job import JobRepository
 from db.repositories.user import UserRepository
+from services import state as state_helpers
 from services.lucidlink import LucidLinkClient, LL_HOST
 from services.s3_service import S3Service
 from services.user_state import UserSession, get_user_session
@@ -41,6 +47,87 @@ from middleware.metrics import PrometheusMiddleware
 def _parse_uid(user_id: Optional[str]) -> Optional[uuid.UUID]:
     """Convert request.state.user_id (str|None) to UUID for repo calls."""
     return uuid.UUID(user_id) if user_id else None
+
+
+def _queue_to_dict(q: SqsQueue) -> dict:
+    """Serialize an SqsQueue ORM row to the dict shape sqs_queue_list.html /
+    sqs_queue_info.html / sqs_tab.html expect (datetime fields → ISO strings,
+    UUIDs stringified). CLAUDE.md rule #1 keeps templates untouched."""
+    return {
+        "id": str(q.id),
+        "queue_url": q.queue_url,
+        "queue_arn": q.queue_arn,
+        "name": q.name,
+        "region": q.region,
+        "datastore_id": q.datastore_id,
+        "filespace_id": q.filespace_id,
+        "import_prefix": q.import_prefix,
+        "status": q.status,
+        "user_id": str(q.user_id) if q.user_id else None,
+        "created_at": q.created_at.isoformat() if q.created_at else None,
+        "last_poll_at": q.last_poll_at.isoformat() if q.last_poll_at else None,
+        "error_message": q.error_message,
+    }
+
+
+def _event_to_dict(e: SqsEvent) -> dict:
+    """Serialize an SqsEvent ORM row to the dict shape sqs_events.html
+    expects. Includes `queue_name` from the eager-loaded queue relationship
+    so the template can render the queue label without a follow-up query."""
+    return {
+        "id": str(e.id),
+        "queue_id": str(e.queue_id),
+        "message_id": e.message_id,
+        "event_type": e.event_type,
+        "bucket": e.bucket,
+        "object_key": e.object_key,
+        "object_size": e.object_size,
+        "event_time": e.event_time.isoformat() if e.event_time else None,
+        "status": e.status,
+        "job_id": e.job_id,
+        "error_message": e.error_message,
+        "created_at": e.created_at.isoformat() if e.created_at else "",
+        "queue_name": e.queue.name if e.queue is not None else None,
+    }
+
+
+def _creds_to_dict(c: Optional[SqsCredentials]) -> Optional[dict]:
+    """Serialize an SqsCredentials ORM row for the SQS tab template.
+
+    The template only reads `access_key` for display. We deliberately omit
+    the decrypted secret from the dict — it has no template consumer and
+    leaving it out keeps the value off the wire even by accident.
+    """
+    if c is None:
+        return None
+    return {
+        "id": c.id,
+        "access_key": c.access_key,
+        "region": c.region,
+        "user_id": str(c.user_id) if c.user_id else None,
+    }
+
+
+async def _enrich_queues_for_template(
+    queues_orm: list[SqsQueue],
+    session: AsyncSession,
+    user_id: Optional[uuid.UUID],
+) -> list[dict]:
+    """Convert SqsQueue rows to template dicts and attach events_today +
+    datastore_name / filespace_name. Single helper to avoid repeating the
+    same loop across every SQS route handler."""
+    ds_repo = DatastoreCredentialsRepository(session)
+    events_repo = SqsEventRepository(session)
+    out: list[dict] = []
+    for q in queues_orm:
+        d = _queue_to_dict(q)
+        d["events_today"] = await events_repo.count_today_for_queue(q.id, user_id)
+        ds_cred = await ds_repo.get_for_datastore_user(q.datastore_id, user_id)
+        if ds_cred is not None:
+            d["datastore_name"] = ds_cred.datastore_name or ""
+            d["filespace_name"] = ds_cred.filespace_name or ""
+        out.append(d)
+    return out
 
 
 async def _startup() -> None:
@@ -1564,30 +1651,22 @@ async def tab_sqs(
 
     user_id = getattr(request.state, "user_id", None)
     parsed_uid = _parse_uid(user_id)
-    sqs_credentials = db.get_sqs_credentials(user_id=user_id)
-    sqs_queues = db.list_sqs_queues(user_id=user_id)
-    sqs_events = db.list_sqs_events(limit=20, user_id=user_id)
-    browsable_datastores = state.get_browsable_datastores()
-    ds_repo = DatastoreCredentialsRepository(session)
+    queue_repo = SqsQueueRepository(session)
+    events_repo = SqsEventRepository(session)
 
-    # Get event count for each queue and add datastore names
-    for queue in sqs_queues:
-        queue["events_today"] = db.get_sqs_event_count_today(
-            queue["id"], user_id=user_id
-        )
-        # Look up datastore name
-        ds_cred = await ds_repo.get_for_datastore_user(
-            queue["datastore_id"], parsed_uid
-        )
-        if ds_cred:
-            queue["datastore_name"] = ds_cred.datastore_name or ""
-            queue["filespace_name"] = ds_cred.filespace_name or ""
+    creds_row = await SqsCredentialsRepository(session).get_for_user(parsed_uid)
+    queues_orm = list(await queue_repo.list_for_user(parsed_uid))
+    events_orm = list(await events_repo.list_for_user(parsed_uid, limit=20))
+    browsable_datastores = state.get_browsable_datastores()
+
+    sqs_queues = await _enrich_queues_for_template(queues_orm, session, parsed_uid)
+    sqs_events = [_event_to_dict(e) for e in events_orm]
 
     return templates.TemplateResponse(
         "partials/sqs_tab.html",
         {
             "request": request,
-            "sqs_credentials": sqs_credentials,
+            "sqs_credentials": _creds_to_dict(creds_row),
             "sqs_queues": sqs_queues,
             "sqs_events": sqs_events,
             "browsable_datastores": browsable_datastores,
@@ -1602,67 +1681,63 @@ async def save_sqs_credentials(
     secret_key: Optional[str] = Form(None),
     session: AsyncSession = Depends(get_db),
 ):
-    """Save SQS IAM credentials."""
+    """Save SQS IAM credentials. Per-user; one row per user."""
     state = get_session_from_request(request)
-    from services import secrets as sec
-
     user_id = getattr(request.state, "user_id", None)
     parsed_uid = _parse_uid(user_id)
-    ds_repo = DatastoreCredentialsRepository(session)
+    creds_repo = SqsCredentialsRepository(session)
+    queue_repo = SqsQueueRepository(session)
 
     try:
-        # Get existing credentials if updating
-        existing = db.get_sqs_credentials(user_id=user_id)
+        existing = await creds_repo.get_for_user(parsed_uid)
 
-        # If no new secret key provided, keep the existing one
-        if not secret_key and existing:
-            secret_key_ref = existing.get("secret_key_encrypted")
+        # If no new secret key was supplied, the form is "edit access_key
+        # only" — re-encrypt the existing plaintext (decrypt once via
+        # state.get_sqs_credentials, then upsert with the new access_key).
+        if not secret_key:
+            if existing is None:
+                raise ValueError("Secret key is required")
+            existing_dict = await state_helpers.get_sqs_credentials(session, parsed_uid)
+            assert existing_dict is not None
+            secret_key = existing_dict["secret_key"]
         else:
+            secret_key = secret_key.strip()
             if not secret_key:
                 raise ValueError("Secret key is required")
-            # Generate a unique reference key and store the actual secret
-            secret_key_ref = uuid.uuid4().hex[:12]
-            sec.set_secret(f"sqs_secret_{secret_key_ref}", secret_key)
 
-        # Save to database (region defaults to us-east-1, actual region determined per-queue)
         region = "us-east-1"
-        db.save_sqs_credentials(access_key, secret_key_ref, region, user_id=user_id)
+        await state_helpers.save_sqs_credentials(
+            session, access_key, secret_key, region, user_id=parsed_uid
+        )
+        await session.commit()
         state.log("SQS credentials saved")
-
-        # Log SQS credentials saved
         ActivityLogger.sqs_credentials_saved(user_id, region)
 
-        # Return the queue list section
-        sqs_queues = db.list_sqs_queues(user_id=user_id)
+        queues_orm = list(await queue_repo.list_for_user(parsed_uid))
+        sqs_queues = await _enrich_queues_for_template(queues_orm, session, parsed_uid)
         browsable_datastores = state.get_browsable_datastores()
-
-        for queue in sqs_queues:
-            queue["events_today"] = db.get_sqs_event_count_today(
-                queue["id"], user_id=user_id
-            )
-            ds_cred = await ds_repo.get_for_datastore_user(
-                queue["datastore_id"], parsed_uid
-            )
-            if ds_cred:
-                queue["datastore_name"] = ds_cred.datastore_name or ""
+        creds_row = await creds_repo.get_for_user(parsed_uid)
 
         return templates.TemplateResponse(
             "partials/sqs_queue_list.html",
             {
                 "request": request,
-                "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+                "sqs_credentials": _creds_to_dict(creds_row),
                 "sqs_queues": sqs_queues,
                 "browsable_datastores": browsable_datastores,
             },
         )
 
     except Exception as e:
+        await session.rollback()
         state.log(f"Failed to save SQS credentials: {e}")
+        # Re-fetch creds on a fresh session-state to render the error response.
+        creds_row = await creds_repo.get_for_user(parsed_uid)
         return templates.TemplateResponse(
             "partials/sqs_queue_list.html",
             {
                 "request": request,
-                "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+                "sqs_credentials": _creds_to_dict(creds_row),
                 "sqs_queues": [],
                 "browsable_datastores": state.get_browsable_datastores(),
                 "error": str(e),
@@ -1671,27 +1746,21 @@ async def save_sqs_credentials(
 
 
 @app.delete("/api/sqs/credentials", response_class=HTMLResponse)
-async def delete_sqs_credentials(request: Request):
+async def delete_sqs_credentials(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
     """Delete SQS credentials."""
     state = get_session_from_request(request)
-    from services import secrets as sec
-
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
 
-    # Get existing to clean up the secret
-    existing = db.get_sqs_credentials(user_id=user_id)
-    if existing:
-        secret_key_ref = existing.get("secret_key_encrypted")
-        if secret_key_ref:
-            sec.delete_secret(f"sqs_secret_{secret_key_ref}")
-
-    db.delete_sqs_credentials(user_id=user_id)
+    await state_helpers.delete_sqs_credentials(session, user_id=parsed_uid)
+    await session.commit()
     state.log("SQS credentials removed")
-
-    # Log SQS credentials deleted
     ActivityLogger.sqs_credentials_deleted(user_id)
 
-    return await tab_sqs(request)
+    return await tab_sqs(request, session=session)
 
 
 @app.get("/api/sqs/iam-policy", response_class=HTMLResponse)
@@ -1721,22 +1790,24 @@ async def sqs_add_queue_modal(request: Request):
 
 
 @app.get("/api/sqs/queues/discover", response_class=HTMLResponse)
-async def discover_sqs_queues(request: Request, queue_region: str = "us-east-1"):
+async def discover_sqs_queues(
+    request: Request,
+    queue_region: str = "us-east-1",
+    session: AsyncSession = Depends(get_db),
+):
     """Discover existing SQS queues in a region. Returns HTML options for select."""
-    from services import secrets as sec
     from services.sqs_service import SQSService, SQSError
 
     user_id = getattr(request.state, "user_id", None)
+    parsed_uid = _parse_uid(user_id)
 
     try:
-        # Get SQS credentials
-        sqs_creds = db.get_sqs_credentials(user_id=user_id)
+        sqs_creds = await state_helpers.get_sqs_credentials(session, parsed_uid)
         if not sqs_creds:
             return HTMLResponse('<option value="">No credentials configured</option>')
 
-        access_key = sqs_creds.get("access_key")
-        secret_key_ref = sqs_creds.get("secret_key_encrypted")
-        secret_key = sec.get_secret(f"sqs_secret_{secret_key_ref}")
+        access_key = sqs_creds["access_key"]
+        secret_key = sqs_creds["secret_key"]
 
         if not access_key or not secret_key:
             return HTMLResponse('<option value="">Invalid credentials</option>')
@@ -1777,23 +1848,21 @@ async def add_sqs_queue(
 ):
     """Add or create a new SQS queue configuration."""
     state = get_session_from_request(request)
-    from services import secrets as sec
     from services.sqs_service import SQSService, SQSError
 
     user_id = getattr(request.state, "user_id", None)
     parsed_uid = _parse_uid(user_id)
     browsable_datastores = state.get_browsable_datastores()
     ds_repo = DatastoreCredentialsRepository(session)
+    queue_repo = SqsQueueRepository(session)
 
     try:
-        # Get SQS credentials
-        sqs_creds = db.get_sqs_credentials(user_id=user_id)
+        sqs_creds = await state_helpers.get_sqs_credentials(session, parsed_uid)
         if not sqs_creds:
             raise ValueError("SQS credentials not configured")
 
-        access_key = sqs_creds.get("access_key")
-        secret_key_ref = sqs_creds.get("secret_key_encrypted")
-        secret_key = sec.get_secret(f"sqs_secret_{secret_key_ref}")
+        access_key = sqs_creds["access_key"]
+        secret_key = sqs_creds["secret_key"]
 
         if not access_key or not secret_key:
             raise ValueError("Invalid SQS credentials")
@@ -1884,10 +1953,8 @@ async def add_sqs_queue(
             # Validate queue and get info
             queue_info = sqs.validate_queue_url(normalized_url)
 
-        # Create queue record
-        queue_id = uuid.uuid4().hex[:12]
-        db.create_sqs_queue(
-            queue_id=queue_id,
+        # Create queue record (UUID PK auto-generated by the model default)
+        new_queue = await queue_repo.create(
             queue_url=queue_info["url"],
             queue_arn=queue_info["arn"],
             name=queue_info["name"],
@@ -1895,32 +1962,26 @@ async def add_sqs_queue(
             datastore_id=datastore_id,
             filespace_id=filespace_id,
             import_prefix=import_prefix.strip(),
-            user_id=state.user_id,
+            status="active",
+            user_id=parsed_uid,
         )
+        await session.commit()
 
         action = "created" if mode == "create" else "added"
         state.log(f"SQS queue '{queue_info['name']}' {action} for automatic imports")
-
-        # Log SQS queue creation
-        ActivityLogger.sqs_queue_created(user_id, queue_info["name"], queue_id)
+        ActivityLogger.sqs_queue_created(user_id, queue_info["name"], str(new_queue.id))
 
         # Return updated queue list
-        sqs_queues = db.list_sqs_queues(user_id=user_id)
-        for queue in sqs_queues:
-            queue["events_today"] = db.get_sqs_event_count_today(
-                queue["id"], user_id=user_id
-            )
-            cred = await ds_repo.get_for_datastore_user(
-                queue["datastore_id"], parsed_uid
-            )
-            if cred:
-                queue["datastore_name"] = cred.datastore_name or ""
+        queues_orm = list(await queue_repo.list_for_user(parsed_uid))
+        sqs_queues = await _enrich_queues_for_template(queues_orm, session, parsed_uid)
 
         return templates.TemplateResponse(
             "partials/sqs_queue_list.html",
             {
                 "request": request,
-                "sqs_credentials": sqs_creds,
+                "sqs_credentials": _creds_to_dict(
+                    await SqsCredentialsRepository(session).get_for_user(parsed_uid)
+                ),
                 "sqs_queues": sqs_queues,
                 "browsable_datastores": browsable_datastores,
                 "success": f"Queue '{queue_info['name']}' {action} successfully",
@@ -1955,7 +2016,6 @@ async def delete_sqs_queue(
 ):
     """Delete an SQS queue configuration and clean up AWS resources."""
     state = get_session_from_request(request)
-    from services import secrets as sec
     from services.sqs_service import (
         SQSService,
         S3NotificationService,
@@ -1965,43 +2025,41 @@ async def delete_sqs_queue(
 
     user_id = getattr(request.state, "user_id", None)
     parsed_uid = _parse_uid(user_id)
+    parsed_qid = uuid.UUID(queue_id)
     ds_repo = DatastoreCredentialsRepository(session)
+    queue_repo = SqsQueueRepository(session)
+    creds_repo = SqsCredentialsRepository(session)
 
-    queue = db.get_sqs_queue(queue_id, user_id=user_id)
-    if not queue:
-        # Queue not found, just return the list
-        sqs_queues = db.list_sqs_queues(user_id=user_id)
-        browsable_datastores = state.get_browsable_datastores()
-        for q in sqs_queues:
-            q["events_today"] = db.get_sqs_event_count_today(q["id"], user_id=user_id)
-            cred = await ds_repo.get_for_datastore_user(q["datastore_id"], parsed_uid)
-            if cred:
-                q["datastore_name"] = cred.datastore_name or ""
+    queue = await queue_repo.get_for_user(parsed_qid, parsed_uid)
+    if queue is None:
+        queues_orm = list(await queue_repo.list_for_user(parsed_uid))
+        sqs_queues = await _enrich_queues_for_template(queues_orm, session, parsed_uid)
         return templates.TemplateResponse(
             "partials/sqs_queue_list.html",
             {
                 "request": request,
-                "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+                "sqs_credentials": _creds_to_dict(
+                    await creds_repo.get_for_user(parsed_uid)
+                ),
                 "sqs_queues": sqs_queues,
-                "browsable_datastores": browsable_datastores,
+                "browsable_datastores": state.get_browsable_datastores(),
                 "error": "Queue not found",
             },
         )
 
-    queue_name = queue.get("name", queue_id)
-    queue_url = queue.get("queue_url")
-    queue_arn = queue.get("queue_arn")
-    queue_region = queue.get("region", "us-east-1")
-    datastore_id = queue.get("datastore_id")
+    queue_name = queue.name or queue_id
+    queue_url = queue.queue_url
+    queue_arn = queue.queue_arn
+    queue_region = queue.region or "us-east-1"
+    datastore_id = queue.datastore_id
 
-    # Get credentials for AWS cleanup
-    sqs_creds = db.get_sqs_credentials(user_id=user_id)
-    cleanup_errors = []
+    # AWS cleanup uses decrypted SQS credentials.
+    sqs_creds_dict = await state_helpers.get_sqs_credentials(session, parsed_uid)
+    cleanup_errors: list[str] = []
 
-    if sqs_creds and queue_url:
-        access_key = sqs_creds.get("access_key")
-        secret_key_ref = sqs_creds.get("secret_key_encrypted")
-        secret_key = sec.get_secret(f"sqs_secret_{secret_key_ref}")
+    if sqs_creds_dict and queue_url:
+        access_key = sqs_creds_dict["access_key"]
+        secret_key = sqs_creds_dict["secret_key"]
 
         if access_key and secret_key:
             # 1. Remove S3 bucket notification
@@ -2029,8 +2087,8 @@ async def delete_sqs_queue(
             except SQSError as e:
                 cleanup_errors.append(f"SQS queue: {e}")
 
-    # Delete from local database
-    db.delete_sqs_queue(queue_id, user_id=user_id)
+    await queue_repo.delete_for_user(parsed_qid, parsed_uid)
+    await session.commit()
 
     if cleanup_errors:
         state.log(
@@ -2039,26 +2097,20 @@ async def delete_sqs_queue(
     else:
         state.log(f"Queue '{queue_name}' fully deleted")
 
-    # Log SQS queue deletion
     ActivityLogger.sqs_queue_deleted(user_id, queue_name, queue_id)
 
-    # Return updated queue list
-    sqs_queues = db.list_sqs_queues(user_id=user_id)
-    browsable_datastores = state.get_browsable_datastores()
-
-    for q in sqs_queues:
-        q["events_today"] = db.get_sqs_event_count_today(q["id"], user_id=user_id)
-        cred = await ds_repo.get_for_datastore_user(q["datastore_id"], parsed_uid)
-        if cred:
-            q["datastore_name"] = cred.datastore_name or ""
+    queues_orm = list(await queue_repo.list_for_user(parsed_uid))
+    sqs_queues = await _enrich_queues_for_template(queues_orm, session, parsed_uid)
 
     return templates.TemplateResponse(
         "partials/sqs_queue_list.html",
         {
             "request": request,
-            "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+            "sqs_credentials": _creds_to_dict(
+                await creds_repo.get_for_user(parsed_uid)
+            ),
             "sqs_queues": sqs_queues,
-            "browsable_datastores": browsable_datastores,
+            "browsable_datastores": state.get_browsable_datastores(),
             "success": f"Queue '{queue_name}' deleted",
         },
     )
@@ -2074,30 +2126,28 @@ async def pause_sqs_queue(
     state = get_session_from_request(request)
     user_id = getattr(request.state, "user_id", None)
     parsed_uid = _parse_uid(user_id)
-    db.update_sqs_queue(queue_id, status="paused", user_id=user_id)
+    parsed_qid = uuid.UUID(queue_id)
+    queue_repo = SqsQueueRepository(session)
 
-    queue = db.get_sqs_queue(queue_id, user_id=user_id)
-    queue_name = queue.get("name", queue_id) if queue else queue_id
+    await queue_repo.update_status_for_user(parsed_qid, parsed_uid, status="paused")
+    await session.commit()
+
+    queue = await queue_repo.get_for_user(parsed_qid, parsed_uid)
+    queue_name = (queue.name if queue else queue_id) or queue_id
     state.log(f"SQS queue '{queue_name}' paused")
 
-    # Return updated queue list
-    sqs_queues = db.list_sqs_queues(user_id=user_id)
-    browsable_datastores = state.get_browsable_datastores()
-    ds_repo = DatastoreCredentialsRepository(session)
-
-    for q in sqs_queues:
-        q["events_today"] = db.get_sqs_event_count_today(q["id"], user_id=user_id)
-        cred = await ds_repo.get_for_datastore_user(q["datastore_id"], parsed_uid)
-        if cred:
-            q["datastore_name"] = cred.datastore_name or ""
+    queues_orm = list(await queue_repo.list_for_user(parsed_uid))
+    sqs_queues = await _enrich_queues_for_template(queues_orm, session, parsed_uid)
 
     return templates.TemplateResponse(
         "partials/sqs_queue_list.html",
         {
             "request": request,
-            "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+            "sqs_credentials": _creds_to_dict(
+                await SqsCredentialsRepository(session).get_for_user(parsed_uid)
+            ),
             "sqs_queues": sqs_queues,
-            "browsable_datastores": browsable_datastores,
+            "browsable_datastores": state.get_browsable_datastores(),
         },
     )
 
@@ -2112,30 +2162,30 @@ async def resume_sqs_queue(
     state = get_session_from_request(request)
     user_id = getattr(request.state, "user_id", None)
     parsed_uid = _parse_uid(user_id)
-    db.update_sqs_queue(queue_id, status="active", error_message="", user_id=user_id)
+    parsed_qid = uuid.UUID(queue_id)
+    queue_repo = SqsQueueRepository(session)
 
-    queue = db.get_sqs_queue(queue_id, user_id=user_id)
-    queue_name = queue.get("name", queue_id) if queue else queue_id
+    await queue_repo.update_status_for_user(
+        parsed_qid, parsed_uid, status="active", error_message=""
+    )
+    await session.commit()
+
+    queue = await queue_repo.get_for_user(parsed_qid, parsed_uid)
+    queue_name = (queue.name if queue else queue_id) or queue_id
     state.log(f"SQS queue '{queue_name}' resumed")
 
-    # Return updated queue list
-    sqs_queues = db.list_sqs_queues(user_id=user_id)
-    browsable_datastores = state.get_browsable_datastores()
-    ds_repo = DatastoreCredentialsRepository(session)
-
-    for q in sqs_queues:
-        q["events_today"] = db.get_sqs_event_count_today(q["id"], user_id=user_id)
-        cred = await ds_repo.get_for_datastore_user(q["datastore_id"], parsed_uid)
-        if cred:
-            q["datastore_name"] = cred.datastore_name or ""
+    queues_orm = list(await queue_repo.list_for_user(parsed_uid))
+    sqs_queues = await _enrich_queues_for_template(queues_orm, session, parsed_uid)
 
     return templates.TemplateResponse(
         "partials/sqs_queue_list.html",
         {
             "request": request,
-            "sqs_credentials": db.get_sqs_credentials(user_id=user_id),
+            "sqs_credentials": _creds_to_dict(
+                await SqsCredentialsRepository(session).get_for_user(parsed_uid)
+            ),
             "sqs_queues": sqs_queues,
-            "browsable_datastores": browsable_datastores,
+            "browsable_datastores": state.get_browsable_datastores(),
         },
     )
 
@@ -2148,14 +2198,17 @@ async def sqs_queue_info(
 ):
     """Get queue details and statistics."""
     _ = get_session_from_request(request)  # Verify authenticated
-    from services import secrets as sec
     from services.sqs_service import SQSService
 
     user_id = getattr(request.state, "user_id", None)
     parsed_uid = _parse_uid(user_id)
+    parsed_qid = uuid.UUID(queue_id)
+    queue_repo = SqsQueueRepository(session)
+    events_repo = SqsEventRepository(session)
+    ds_repo = DatastoreCredentialsRepository(session)
 
-    queue = db.get_sqs_queue(queue_id, user_id=user_id)
-    if not queue:
+    queue_orm = await queue_repo.get_for_user(parsed_qid, parsed_uid)
+    if queue_orm is None:
         return templates.TemplateResponse(
             "partials/sqs_queue_info.html",
             {
@@ -2164,25 +2217,23 @@ async def sqs_queue_info(
             },
         )
 
-    # Add event count
-    queue["events_today"] = db.get_sqs_event_count_today(queue_id, user_id=user_id)
+    queue = _queue_to_dict(queue_orm)
+    queue["events_today"] = await events_repo.count_today_for_queue(
+        parsed_qid, parsed_uid
+    )
 
-    # Add datastore name
-    ds_repo = DatastoreCredentialsRepository(session)
-    cred = await ds_repo.get_for_datastore_user(queue["datastore_id"], parsed_uid)
-    if cred:
+    cred = await ds_repo.get_for_datastore_user(queue_orm.datastore_id, parsed_uid)
+    if cred is not None:
         queue["datastore_name"] = cred.datastore_name or ""
         queue["filespace_name"] = cred.filespace_name or ""
 
-    # Try to get current queue stats from AWS
+    # Best-effort: surface AWS-side queue depth if we can reach it.
     try:
-        sqs_creds = db.get_sqs_credentials(user_id=user_id)
+        sqs_creds = await state_helpers.get_sqs_credentials(session, parsed_uid)
         if sqs_creds:
-            access_key = sqs_creds.get("access_key")
-            secret_key_ref = sqs_creds.get("secret_key_encrypted")
-            secret_key = sec.get_secret(f"sqs_secret_{secret_key_ref}")
-            region = sqs_creds.get("region", "us-east-1")
-
+            access_key = sqs_creds["access_key"]
+            secret_key = sqs_creds["secret_key"]
+            region = sqs_creds.get("region") or "us-east-1"
             if access_key and secret_key:
                 sqs = SQSService(access_key, secret_key, region)
                 attrs = sqs.get_queue_attributes(queue["queue_url"])
@@ -2190,7 +2241,7 @@ async def sqs_queue_info(
                     "ApproximateNumberOfMessages", "0"
                 )
     except Exception:
-        pass  # Ignore errors fetching queue stats
+        pass
 
     return templates.TemplateResponse(
         "partials/sqs_queue_info.html",
@@ -2202,11 +2253,19 @@ async def sqs_queue_info(
 
 
 @app.get("/api/sqs/events", response_class=HTMLResponse)
-async def list_sqs_events(request: Request, limit: int = 50):
+async def list_sqs_events(
+    request: Request,
+    limit: int = 50,
+    session: AsyncSession = Depends(get_db),
+):
     """List recent SQS events."""
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
-    events = db.list_sqs_events(limit=limit, user_id=user_id)
+    parsed_uid = _parse_uid(user_id)
+    events_orm = await SqsEventRepository(session).list_for_user(
+        parsed_uid, limit=limit
+    )
+    events = [_event_to_dict(e) for e in events_orm]
 
     return templates.TemplateResponse(
         "partials/sqs_events.html",
@@ -2218,11 +2277,19 @@ async def list_sqs_events(request: Request, limit: int = 50):
 
 
 @app.get("/api/sqs/events/content", response_class=HTMLResponse)
-async def list_sqs_events_content(request: Request, limit: int = 50):
+async def list_sqs_events_content(
+    request: Request,
+    limit: int = 50,
+    session: AsyncSession = Depends(get_db),
+):
     """List recent SQS events - inner content only for polling."""
     _ = get_session_from_request(request)  # Verify authenticated
     user_id = getattr(request.state, "user_id", None)
-    events = db.list_sqs_events(limit=limit, user_id=user_id)
+    parsed_uid = _parse_uid(user_id)
+    events_orm = await SqsEventRepository(session).list_for_user(
+        parsed_uid, limit=limit
+    )
+    events = [_event_to_dict(e) for e in events_orm]
 
     return templates.TemplateResponse(
         "partials/sqs_events_content.html",
@@ -2234,11 +2301,17 @@ async def list_sqs_events_content(request: Request, limit: int = 50):
 
 
 @app.delete("/api/sqs/events", response_class=HTMLResponse)
-async def clear_sqs_events(request: Request):
-    """Clear all SQS event history."""
+async def clear_sqs_events(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
+    """Clear all SQS event history for the current user."""
     state = get_session_from_request(request)
     user_id = getattr(request.state, "user_id", None)
-    deleted = db.clear_sqs_events(user_id=user_id)
+    parsed_uid = _parse_uid(user_id)
+
+    deleted = await SqsEventRepository(session).clear_for_user(parsed_uid)
+    await session.commit()
     state.log(f"Cleared {deleted} SQS events")
 
     return templates.TemplateResponse(

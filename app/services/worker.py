@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from arq import cron
 
+from db.repositories.datastore import SqsEventRepository
 from db.repositories.job import JobRepository
 from services.database import get_sessionmaker, shutdown_engine
 from services.idempotency import idempotent
@@ -297,9 +298,17 @@ async def on_shutdown(ctx: dict[str, Any]) -> None:
 @instrumented
 @idempotent
 async def cleanup_old_events(ctx: dict[str, Any]) -> int:
-    """Periodic cleanup of old SQS events (runs every 6 hours)."""
-    # awsk-opc: clear_old_sqs_events pending repo conversion
-    raise RuntimeError("awsk-opc: clear_old_sqs_events pending repo conversion")
+    """Periodic cleanup of old SQS events (runs every 6 hours).
+
+    Deletes events older than 7 days. Returns the count of rows removed.
+    """
+    sm = ctx["sessionmaker"]
+    async with sm() as session:
+        deleted = await SqsEventRepository(session).clear_old(days=7)
+        await session.commit()
+    if deleted > 0:
+        await publish_log(ctx, f"Cleanup: removed {deleted} old SQS event(s)")
+    return deleted
 
 
 @instrumented
