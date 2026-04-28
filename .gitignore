@@ -11,6 +11,10 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+snapshot_report.html
 
 # IDE
 .idea/

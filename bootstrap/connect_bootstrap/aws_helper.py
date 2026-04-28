@@ -23,15 +23,15 @@ def _ensure_app_on_path() -> None:
 _ensure_app_on_path()
 
 # Imported lazily — `services.aws` requires boto3 which is in our deps.
-from services.aws import client, resource  # noqa: E402
+from services.aws import get_client, get_resource  # noqa: E402
 
 
 def boto3_client(service_name: str, **kwargs: Any) -> Any:
     """Construct a boto3 client via the app's helper. Default credential
     chain only — never pass aws_access_key_id / aws_secret_access_key here.
     """
-    return client(service_name, **kwargs)
+    return get_client(service_name, **kwargs)
 
 
 def boto3_resource(service_name: str, **kwargs: Any) -> Any:
-    return resource(service_name, **kwargs)
+    return get_resource(service_name, **kwargs)

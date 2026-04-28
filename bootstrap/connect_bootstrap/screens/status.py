@@ -11,6 +11,7 @@ Auto-refreshes every 15s while the screen is mounted.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -127,8 +128,6 @@ class StatusScreen(Screen):
             asyncio.to_thread(self._refresh_alb, ecs, elbv2, cluster, web),
             asyncio.to_thread(self._refresh_alarms, cw),
         )
-
-        from datetime import datetime, timezone
 
         self.query_one("#last-updated", Static).update(
             f"updated {datetime.now(timezone.utc).strftime('%H:%M:%SZ')}"
