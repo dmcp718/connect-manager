@@ -15,6 +15,7 @@ venv/
 .coverage.*
 htmlcov/
 snapshot_report.html
+bootstrap/tests/artifacts/
 
 # IDE
 .idea/

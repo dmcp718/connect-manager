@@ -27,14 +27,29 @@ _VERSION_OUTPUT = {
 }
 
 
+_TERRAFORM_OUTPUTS_JSON = (
+    "{"
+    '"cluster_name":{"value":"connect-prod","type":"string"},'
+    '"web_service_name":{"value":"connect-prod-web","type":"string"},'
+    '"worker_service_name":{"value":"connect-prod-worker","type":"string"},'
+    '"migrate_task_definition_family":{"value":"connect-prod-migrate","type":"string"},'
+    '"alb_dns_name":{"value":"connect-prod-alb-1234567890.us-east-1.elb.amazonaws.com",'
+    '"type":"string"},'
+    '"secrets_kms_key_arn":{"value":"arn:aws:kms:us-east-1:123456789012:key/abc","type":"string"},'
+    '"rds_master_secret_arn":{"value":"arn:aws:secretsmanager:us-east-1:123456789012:'
+    'secret:/connect/prod/db-XyZ","type":"string"}'
+    "}"
+)
+
+
 async def fake_run_capture(
     argv, cwd=None, env=None, timeout=30.0
 ) -> tuple[int, str, str]:
     """Deterministic stand-in for `run_capture`.
 
-    Returns canned `--version` output for the dependency-check probes and
-    a fixed `sts get-caller-identity` JSON for the auth screen. Anything
-    else returns rc=0 with empty streams.
+    Returns canned `--version` output for the dependency-check probes,
+    a fixed `sts get-caller-identity` JSON for the auth screen, and a
+    fixed `terraform output -json` for the apply screen.
     """
     args = list(argv)
     if not args:
@@ -51,6 +66,9 @@ async def fake_run_capture(
             "",
         )
 
+    if head == "terraform" and rest[:2] == ["output", "-json"]:
+        return 0, _TERRAFORM_OUTPUTS_JSON, ""
+
     if head in _VERSION_OUTPUT:
         return 0, _VERSION_OUTPUT[head], ""
 
@@ -58,9 +76,19 @@ async def fake_run_capture(
 
 
 async def fake_run_stream(argv, cwd=None, env=None):
-    """Deterministic stand-in for `run_stream` — emits a single line then exits."""
-    yield "stdout", f"$ {' '.join(argv)}"
-    yield "stdout", "(mocked output)"
+    """Deterministic stand-in for `run_stream`.
+
+    For `terraform plan` we emit the standard plan summary line so
+    `ApplyScreen._parse_summary` populates a non-zero counter and the
+    Apply button enables. Other invocations get a single mocked line.
+    """
+    args = list(argv)
+    yield "stdout", f"$ {' '.join(args)}"
+    if args[:2] == ["terraform", "plan"]:
+        yield "stdout", "Terraform will perform the following actions:"
+        yield "stdout", "Plan: 42 to add, 0 to change, 0 to destroy."
+    else:
+        yield "stdout", "(mocked output)"
     yield "exit", "0"
 
 
