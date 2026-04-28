@@ -97,15 +97,15 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
             ds_cred = await state_helpers.get_datastore_credentials(
                 session, job["datastore_id"], parsed_uid
             )
+            api_host = (
+                await state_helpers.get_user_setting(session, parsed_uid, "api_host")
+                or ""
+            )
         if ds_cred is None:
             raise ValueError(
                 f"DataStore credentials not found for {job['datastore_id']}"
             )
 
-        # api_host persistence isn't yet wired on this branch (no Settings
-        # model — see SPEC follow-up). Empty string makes LucidLinkClient
-        # fall back to its LL_HOST default, which is what the smoke uses.
-        api_host = ""
         ll_client = LucidLinkClient(api_host=api_host)
 
         return await _import_job_body(

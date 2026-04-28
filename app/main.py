@@ -305,7 +305,10 @@ async def load_filespaces(
     state.filespaces = {fs.get("name"): fs.get("id") for fs in result}
     state.token = token
     state.api_host = effective_host
-    state.save_connection(save_secrets=True)  # Persist token and API host
+    state.save_connection(save_secrets=True)  # token via services.secrets (sync)
+    user_id_str_for_save = getattr(request.state, "user_id", None)
+    await state.save_api_host(session, _parse_uid(user_id_str_for_save))
+    await session.commit()
     state.log(f"Loaded {len(result)} filespaces")
 
     # Auto-load datastores for the first filespace

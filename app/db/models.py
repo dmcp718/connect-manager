@@ -451,10 +451,40 @@ class ProcessedJob(Base):
     result_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
+class UserSetting(Base):
+    """Per-user key/value setting.
+
+    Used for: ``api_host`` (LucidLink API endpoint per user, read by the
+    SQS poller and the worker). Anything that needs per-user persistence
+    and doesn't warrant its own table goes here.
+
+    user_id is part of the composite PK and therefore NOT NULL — multi-
+    user mode is mandatory on aws-fargate, so the legacy SQLite "global
+    setting with user_id NULL" tier is intentionally not modelled.
+    """
+
+    __tablename__ = "user_settings"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 __all__ = [
     "Base",
     "User",
     "UserSession",
+    "UserSetting",
     "DatastoreCredentials",
     "Datastore",
     "SqsCredentials",

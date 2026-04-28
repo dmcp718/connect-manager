@@ -21,7 +21,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from services import secrets
 from services.lucidlink import LucidLinkClient
 from services.s3_service import S3Service
-from services.state import list_all_datastore_credentials
+from services.state import (
+    get_user_setting,
+    list_all_datastore_credentials,
+    set_user_setting,
+)
 
 
 @dataclass
@@ -82,15 +86,23 @@ class UserSession:
     async def hydrate(
         self, session: AsyncSession, user_uuid: Optional[uuid.UUID]
     ) -> None:
-        """Repopulate the in-memory DataStore-credential cache from Postgres.
+        """Repopulate the in-memory caches (DataStore creds + api_host)
+        from Postgres.
 
         Idempotent — only runs once per UserSession via the `hydrated` flag.
-        Routes that read state.datastore_credentials right after login
-        (index, tab_browser, tab_settings) await this so a fresh post-login
-        view sees the user's previously-saved DataStores.
+        Routes that read state.datastore_credentials or state.api_host right
+        after login (index, tab_browser, tab_settings) await this so a fresh
+        post-login view sees the user's previously-saved values.
         """
         if self.hydrated:
             return
+
+        # api_host: stored in user_settings under key 'api_host', falls back
+        # to the global (user_id=NULL) row if not set per-user.
+        saved_api_host = await get_user_setting(session, user_uuid, "api_host")
+        if saved_api_host:
+            self.api_host = saved_api_host
+
         rows = await list_all_datastore_credentials(session, user_id=user_uuid)
         for row in rows:
             datastore_id = row["datastore_id"]
@@ -157,16 +169,25 @@ class UserSession:
     def save_connection(self, save_secrets: bool = True) -> None:
         """Persist the user's LucidLink token via services.secrets.
 
-        api_host persistence is intentionally not yet implemented — there
-        is no Settings model on this branch (legacy SQLite settings table
-        was dropped in the Postgres rewrite). The api_host stays in
-        in-memory UserSession for the duration of the process; on
-        restart the user re-enters it via the Settings tab. Tracked as
-        a separate follow-up.
+        Token write is sync (services.secrets handles either keyring or
+        Fernet to disk). The api_host write needs a Postgres session and
+        therefore goes through :meth:`save_api_host` from an async route.
         """
         if save_secrets and self.token:
             secrets.set_user_token(self.user_id, self.token)
         self.log("Connection saved")
+
+    async def save_api_host(
+        self, session: AsyncSession, user_uuid: Optional[uuid.UUID]
+    ) -> None:
+        """Write the in-memory api_host to user_settings. Caller commits.
+
+        No-op when there's no logged-in user (user_uuid is None) — the
+        UserSetting row requires a user_id since multi-user is mandatory.
+        """
+        if not self.api_host or user_uuid is None:
+            return
+        await set_user_setting(session, user_uuid, "api_host", self.api_host)
 
     def log(self, message: str) -> None:
         """Add a timestamped log message."""

@@ -295,10 +295,13 @@ async def process_s3_event(
             await session.commit()
         return
 
-    # api_host persistence is currently absent (legacy db.get_setting was
-    # SQLite-only and was removed during the Postgres rewrite). Falling back
-    # to "" lets LucidLinkClient use its default LL_HOST. Tracked separately.
-    api_host = ""
+    # Pull the per-user api_host from the user_settings table; falls back to
+    # the global (user_id NULL) row inside get_user_setting. Empty string
+    # makes LucidLinkClient use its LL_HOST default.
+    async with sm() as session:
+        api_host = (
+            await state_helpers.get_user_setting(session, user_id, "api_host") or ""
+        )
 
     async with sm() as session:
         await SqsEventRepository(session).update_status(event_id, status="processing")

@@ -23,6 +23,7 @@ from db.repositories.datastore import (
     SqsCredentialsRepository,
     SqsQueueRepository,
 )
+from db.repositories.settings import UserSettingsRepository
 
 
 def _encrypt_creds(access_key: str, secret_key: str) -> bytes:
@@ -255,3 +256,28 @@ async def delete_sqs_queue(
 ) -> bool:
     repo = SqsQueueRepository(session)
     return await repo.delete(queue_id)
+
+
+# ── Per-user settings (key/value store backed by user_settings table) ─────────
+
+
+async def get_user_setting(
+    session: AsyncSession,
+    user_id: Optional[uuid.UUID],
+    key: str,
+) -> Optional[str]:
+    """Read a per-user setting. Returns None when no user is logged in
+    (the bootstrap admin path before auth fires) or when the row is unset."""
+    if user_id is None:
+        return None
+    return await UserSettingsRepository(session).get(user_id, key)
+
+
+async def set_user_setting(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    key: str,
+    value: str,
+) -> None:
+    """Upsert a per-user setting. Caller commits."""
+    await UserSettingsRepository(session).upsert(user_id, key, value)
