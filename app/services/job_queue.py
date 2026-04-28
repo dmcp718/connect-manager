@@ -11,7 +11,7 @@ import asyncio
 import json
 import os
 import uuid
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import redis.asyncio as redis
 from arq import create_pool
@@ -19,11 +19,10 @@ from arq.connections import RedisSettings
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from db.repositories.job import JobRepository
-
-if TYPE_CHECKING:
-    from services.state import AppState
+from services.logging import get_logger
 
 LOG_CHANNEL = "worker:logs"
+_log = get_logger("job_queue")
 
 
 def get_redis_settings() -> RedisSettings:
@@ -40,31 +39,21 @@ class JobQueue:
         self._redis_pool: Any = None
         self._pubsub: Any = None
         self._subscriber_task: Optional[asyncio.Task[None]] = None
-        self._state: Optional["AppState"] = None
         self._sessionmaker: Optional[async_sessionmaker[AsyncSession]] = None
-
-    def set_state(self, state: "AppState") -> None:
-        """Set reference to app state for logging."""
-        self._state = state
 
     def set_sessionmaker(self, sm: async_sessionmaker[AsyncSession]) -> None:
         """Inject the async_sessionmaker used for all DB operations."""
         self._sessionmaker = sm
 
-    def log(self, message: str) -> None:
-        """Log a message via app state."""
-        if self._state:
-            self._state.log(message)
-
     async def start(self) -> None:
         """Initialize connection to Valkey/Redis and start log subscriber."""
         try:
             self._redis_pool = await create_pool(get_redis_settings())
-            self.log("Job queue connected to Valkey")
+            _log.info("Job queue connected to Valkey")
 
             await self._start_log_subscriber()
         except Exception as e:
-            self.log(f"Job queue fallback mode (no Valkey): {e}")
+            _log.warning("Job queue fallback mode (no Valkey)", extra={"error": str(e)})
             self._redis_pool = None
 
     async def _start_log_subscriber(self) -> None:
@@ -77,9 +66,9 @@ class JobQueue:
             self._pubsub = redis_client.pubsub()
             await self._pubsub.subscribe(LOG_CHANNEL)
             self._subscriber_task = asyncio.create_task(self._listen_for_logs())
-            self.log("Subscribed to worker logs")
+            _log.info("Subscribed to worker logs")
         except Exception as e:
-            self.log(f"Could not subscribe to worker logs: {e}")
+            _log.warning("Could not subscribe to worker logs", extra={"error": str(e)})
 
     async def _listen_for_logs(self) -> None:
         """Listen for log messages from workers."""
@@ -88,13 +77,13 @@ class JobQueue:
                 if message["type"] == "message":
                     try:
                         data = json.loads(message["data"])
-                        self.log(data.get("message", ""))
+                        _log.info(data.get("message", ""), extra={"source": "worker"})
                     except (json.JSONDecodeError, KeyError):
                         pass
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            self.log(f"Log subscriber error: {e}")
+            _log.error("Log subscriber error", extra={"error": str(e)})
 
     async def stop(self) -> None:
         """Close connection to Valkey/Redis."""
@@ -116,7 +105,7 @@ class JobQueue:
             await self._redis_pool.wait_closed()
             self._redis_pool = None
 
-        self.log("Job queue disconnected")
+        _log.info("Job queue disconnected")
 
     async def add_job(
         self,
@@ -146,13 +135,13 @@ class JobQueue:
             await session.commit()
             job_id: int = job.id
 
-        self.log(f"Job #{job_id} queued: {prefix}")
+        _log.info("Job queued", extra={"job_id": job_id, "prefix": prefix})
 
         if self._redis_pool:
             await self._redis_pool.enqueue_job("import_job", job_id)
-            self.log(f"Job #{job_id} dispatched to worker")
+            _log.info("Job dispatched to worker", extra={"job_id": job_id})
         else:
-            self.log(f"Job #{job_id} pending (no workers available)")
+            _log.warning("Job pending (no workers available)", extra={"job_id": job_id})
 
         return job_id
 
@@ -171,7 +160,7 @@ class JobQueue:
             await session.commit()
 
         if cancelled:
-            self.log(f"Job #{job_id} cancelled")
+            _log.info("Job cancelled", extra={"job_id": job_id})
         return cancelled
 
     async def get_jobs(self, user_id: Optional[str] = None) -> list[dict[str, Any]]:
