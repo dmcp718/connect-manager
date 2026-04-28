@@ -29,11 +29,11 @@ from services.state import (
     save_sqs_credentials,
 )
 
-# Legacy db.* shims: services/database.py was rewritten as async-only engine
-# in awsk-rp6.8 — the SQLite-era db.get_setting / db.get_all_datastore_credentials
-# / etc. are gone. These shims keep boot + first-request paths AttributeError-
-# free. Functionality that depended on these is degraded; proper async
-# conversion is tracked as a follow-up to awsk-opc.
+# Legacy db.* shims kept here for the few in-class methods on UserSession
+# that still reference the old SQLite API (save_connection / save_datastore_for_browsing).
+# Most call sites were converted to async repos in awsk-26h.{1..4} and
+# awsk-uvz; the remaining stubs let UserSession boot without import errors
+# while the in-memory session-state pattern is maintained.
 _log_legacy = get_logger("user_state.legacy_db")
 
 

@@ -117,11 +117,12 @@ async def shutdown_engine() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Legacy SQLite-era shim — REMOVE after awsk-opc follow-up beads convert all
-# `db.*` callers in app/services/{state,user_state,sqs_poller}.py and app/main.py
-# to async repository methods. Until then this catches every legacy call with
-# a shape-aware safe default so the app boots and serves requests cleanly,
-# while degraded codepaths log a warning per call.
+# Legacy SQLite-era shim. As of awsk-26h.4 + awsk-uvz the only remaining
+# legacy callers are db.clear_activity_logs / db.create_activity_log — both
+# pending awsk-er5 (Postgres ActivityLog model + repo, currently deferred
+# because activity logs ship to stdout → CloudWatch). The shim catches those
+# with shape-aware safe defaults so the /api/logs/clear endpoint stays a
+# no-op without raising. Remove this whole block once awsk-er5 lands.
 # ─────────────────────────────────────────────────────────────────────────────
 
 _LEGACY_LIST_PREFIXES = ("list_", "get_all_")

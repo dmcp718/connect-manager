@@ -14,6 +14,8 @@ from typing import Any, Optional
 
 from arq import cron
 
+import uuid
+
 from db.repositories.datastore import SqsEventRepository
 from db.repositories.job import JobRepository
 from services.database import get_sessionmaker, shutdown_engine
@@ -21,7 +23,7 @@ from services.idempotency import idempotent
 from services.lucidlink import LucidLinkClient
 from services.metrics import instrumented
 from services.s3_service import S3Service
-from services import secrets
+from services import secrets, state as state_helpers
 from services.sqs_poller import sqs_poll_cron
 from services.activity_logger import ActivityLogger
 from services.valkey import arq_redis_settings
@@ -90,9 +92,34 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
         if not token:
             raise ValueError("No API token available - please reconnect in web UI")
 
-        # awsk-opc: get_datastore_credentials pending repo conversion
-        raise RuntimeError(
-            "awsk-opc: get_datastore_credentials / get_setting pending repo conversion"
+        parsed_uid = uuid.UUID(user_id) if user_id else None
+        async with sm() as session:
+            ds_cred = await state_helpers.get_datastore_credentials(
+                session, job["datastore_id"], parsed_uid
+            )
+        if ds_cred is None:
+            raise ValueError(
+                f"DataStore credentials not found for {job['datastore_id']}"
+            )
+
+        # api_host persistence isn't yet wired on this branch (no Settings
+        # model — see SPEC follow-up). Empty string makes LucidLinkClient
+        # fall back to its LL_HOST default, which is what the smoke uses.
+        api_host = ""
+        ll_client = LucidLinkClient(api_host=api_host)
+
+        return await _import_job_body(
+            ctx=ctx,
+            job=job,
+            job_id=job_id,
+            aws_key=ds_cred["access_key"],
+            aws_secret=ds_cred["secret_key"],
+            s3_endpoint=ds_cred.get("endpoint"),
+            s3_region=ds_cred.get("region") or "us-east-1",
+            api_host=api_host,
+            user_id=user_id,
+            ll_client=ll_client,
+            token=token,
         )
 
     except Exception as e:
@@ -120,12 +147,9 @@ async def _import_job_body(
     api_host: str,
     user_id: Optional[str],
     ll_client: LucidLinkClient,
+    token: str,
 ) -> dict[str, Any]:
-    """Inner body of import_job; called once credentials are resolved.
-
-    Kept separate so the credential-fetch stubs above do not create unreachable
-    code.  Wired up when awsk-opc lands.
-    """
+    """Inner body of import_job; called once credentials are resolved."""
 
     async def log(msg: str) -> None:
         await publish_log(ctx, msg)
@@ -142,7 +166,7 @@ async def _import_job_body(
     await log(f"Using filespace: {job['filespace_id'][:8]}...")
 
     ll_client.configure(
-        token="",  # resolved by caller
+        token=token,
         filespace_id=job["filespace_id"],
         datastore_id=job["datastore_id"],
         api_host=api_host,
@@ -332,9 +356,16 @@ async def timeout_stale_jobs(ctx: dict[str, Any]) -> int:
 @instrumented
 @idempotent
 async def cleanup_old_activity_logs(ctx: dict[str, Any]) -> dict[str, Any]:
-    """Periodic cleanup of old activity logs (runs daily at 3 AM)."""
-    # awsk-opc: clear_old_activity_logs pending repo conversion
-    raise RuntimeError("awsk-opc: clear_old_activity_logs pending repo conversion")
+    """Periodic cleanup of old activity logs (runs daily at 3 AM).
+
+    No-op until awsk-er5 lands an ActivityLog Postgres model + repo.
+    Activity logs currently ship to stdout → CloudWatch Logs only, where
+    retention is governed by the log-group retention policy (set per
+    environment in terraform/modules/ecs-service-*). This cron returns
+    a sentinel result so the job is recorded as completed instead of
+    crashing the worker every night at 03:00.
+    """
+    return {"status": "skipped", "reason": "stdout-only; awsk-er5 deferred"}
 
 
 class WorkerSettings:
