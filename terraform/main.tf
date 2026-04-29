@@ -375,7 +375,14 @@ module "ecs_service_web" {
   security_group_ids = [aws_security_group.web_tasks.id]
   target_group_arn   = module.alb.web_target_group_arn
   web_image          = local.web_image
-  web_port           = var.web_target_port
+  # Mirror of upstream lucidlink/lucidlink-api:latest in our ECR. We can't
+  # rely on Docker Hub directly: anonymous pulls hit the 200/6h rate
+  # limit after a few back-to-back deploys and ECS gets stuck in
+  # CannotPullContainerError. The mirror is created/updated by the
+  # operator with `docker buildx imagetools create -t <ecr>:<tag>
+  # lucidlink/lucidlink-api:<tag>`.
+  lucidlink_api_image = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/lucidlink-api:latest"
+  web_port            = var.web_target_port
 
   desired_count = var.web_desired_count
   min_count     = var.web_min_count
