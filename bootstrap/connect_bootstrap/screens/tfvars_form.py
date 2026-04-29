@@ -40,9 +40,11 @@ class TfvarsFormScreen(Screen):
     """
 
     # Field name → (label, default, required, placeholder).
+    # NOTE: aws_region is intentionally NOT in this list. It is captured on
+    # Step 2 (auth screen) where it is actually verified against AWS via
+    # sts get-caller-identity, and injected into the tfvars file on _save().
     FIELDS: tuple[tuple[str, str, str, bool, str], ...] = (
         ("env", "env (deployment name suffix)", "prod", False, "prod"),
-        ("aws_region", "aws_region", "us-east-1", False, "us-east-1"),
         ("domain", "domain (FQDN)", "", True, "connect.example.com"),
         ("route53_zone_id", "route53_zone_id", "", True, "Z0123456789ABCDEFGHIJ"),
         (
@@ -72,6 +74,9 @@ class TfvarsFormScreen(Screen):
             yield Static("[b]Step 3 / 8[/b] — terraform.tfvars", id="title")
             yield Static(
                 "Defaults pre-populated from existing tfvars + tfvars.example."
+            )
+            yield Static(
+                f"aws_region = [b]{self.app.state.aws_region}[/b] (inherited from Step 2)"
             )
             existing = self._load_existing()
             for name, label, default, _required, placeholder in self.FIELDS:
@@ -129,6 +134,11 @@ class TfvarsFormScreen(Screen):
             status.update(f"[red]Missing required:[/red] {', '.join(missing)}")
             return
 
+        # aws_region is sourced from Step 2 (auth) where it was verified
+        # against AWS. Inject it so the written tfvars file matches the
+        # account/region the operator just authenticated to.
+        values["aws_region"] = self.app.state.aws_region
+
         target = self._terraform_dir() / "terraform.tfvars"
         try:
             tfvars.write(target, values)
@@ -139,9 +149,6 @@ class TfvarsFormScreen(Screen):
         # Stash on app state for later screens.
         self.app.state.terraform_dir = self._terraform_dir()
         self.app.state.env = str(values.get("env", "prod"))
-        self.app.state.aws_region = str(
-            values.get("aws_region", self.app.state.aws_region)
-        )
         self.app.state.domain = str(values.get("domain", ""))
         self.app.state.route53_zone_id = str(values.get("route53_zone_id", ""))
         self.app.state.github_repo = str(values.get("github_repo", "")) or None
