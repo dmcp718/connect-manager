@@ -2,12 +2,19 @@
 
 Textual TUI that walks an operator through deploying the CONNECT Manager `aws-fargate` stack from scratch.
 
-## Install
+## Run
+
+`uv` resolves the venv + deps on first invocation; no separate `pip install` step:
 
 ```bash
 cd bootstrap
-pip install -e .
-connect-bootstrap            # launches the wizard
+uv run connect-bootstrap            # launches the wizard
+```
+
+Or from the repo root (no `cd`):
+
+```bash
+uv run --project bootstrap connect-bootstrap
 ```
 
 For testing against ministack (no real AWS):
@@ -16,8 +23,11 @@ For testing against ministack (no real AWS):
 AWS_ENDPOINT_URL=http://localhost:4566 \
 AWS_ACCESS_KEY_ID=test \
 AWS_SECRET_ACCESS_KEY=test \
-connect-bootstrap
+uv run --project bootstrap connect-bootstrap
 ```
+
+If you don't have `uv` installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`. The
+older `pip install -e .` path still works but uv is the supported flow.
 
 ## Wizard flow
 

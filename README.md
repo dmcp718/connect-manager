@@ -40,9 +40,10 @@ The fastest path is the Textual-based bootstrap wizard, which walks through the 
 
 ```bash
 cd bootstrap
-pip install -e .
-connect-bootstrap
+uv run connect-bootstrap
 ```
+
+(Or from the repo root: `uv run --project bootstrap connect-bootstrap`.)
 
 The wizard handles: dependency checks → AWS auth → `terraform.tfvars` → plan/apply → Secrets Manager seeding → ECS cluster verification → CONNECT install → status dashboard. See `bootstrap/README.md` for details.
 
