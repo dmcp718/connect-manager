@@ -69,7 +69,7 @@ async def test_wizard_walks_through_all_eight_steps(repo_root: Path):
         await _settle(pilot, 4)
 
         # ── Step 2: AWS auth ──────────────────────────────────────────────
-        await pilot.press("v")  # action_verify_now
+        await pilot.press("ctrl+v")  # action_verify_now (ctrl+v: bypasses Input focus)
         await _settle(pilot, 8)
         assert app.state.aws_account_id == "123456789012"
         assert app.state.caller_arn and "test-operator" in app.state.caller_arn
@@ -77,7 +77,7 @@ async def test_wizard_walks_through_all_eight_steps(repo_root: Path):
             f"step 2 (auth): account={app.state.aws_account_id} "
             f"arn={app.state.caller_arn}"
         )
-        await pilot.press("n")  # _advance → TfvarsFormScreen
+        await pilot.press("ctrl+j")  # advance → TfvarsFormScreen
         await _settle(pilot, 4)
 
         # ── Step 3: tfvars form ──────────────────────────────────────────
@@ -96,7 +96,7 @@ async def test_wizard_walks_through_all_eight_steps(repo_root: Path):
         # Press Next to advance.
         next_btn = tfvars_screen.query_one("#next", Button)
         if not next_btn.disabled:
-            await pilot.press("n")
+            await pilot.press("ctrl+j")  # advance — plain "n" gets eaten by Input focus
             await _settle(pilot, 4)
         else:
             # Save did not enable Next — drop directly into Apply for the
@@ -136,7 +136,7 @@ async def test_wizard_walks_through_all_eight_steps(repo_root: Path):
         await _settle(pilot, 8)
         assert app.state.secrets_seeded, "mocked PutSecretValue should flip flag"
         transcript.append("step 5 (secrets): jwt + admin written")
-        await pilot.press("n")  # _advance → ClusterScreen
+        await pilot.press("ctrl+j")  # _advance → ClusterScreen
         await _settle(pilot, 4)
 
         # ── Step 6: Cluster verification ─────────────────────────────────
@@ -152,7 +152,7 @@ async def test_wizard_walks_through_all_eight_steps(repo_root: Path):
         await _settle(pilot, 20)  # update-service + waiter + target-health probe
         assert app.state.deploy_succeeded, "mocked target health=healthy → flag"
         transcript.append("step 7 (deploy): services stable + target healthy")
-        await pilot.press("n")  # _advance → StatusScreen
+        await pilot.press("ctrl+j")  # _advance → StatusScreen
         await _settle(pilot, 4)
 
         # ── Step 8: Status dashboard ─────────────────────────────────────

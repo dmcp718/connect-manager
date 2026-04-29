@@ -85,7 +85,7 @@ async def test_auth_screen_verify_populates_state():
     app = _Harness(AwsAuthScreen, WizardState())
     async with app.run_test() as pilot:
         await pilot.pause()
-        await pilot.press("v")  # action_verify_now
+        await pilot.press("ctrl+v")  # action_verify_now (ctrl+v: bypasses Input focus)
         await pilot.pause()
         assert app.state.aws_account_id == "123456789012"
         assert app.state.caller_arn and "test-operator" in app.state.caller_arn

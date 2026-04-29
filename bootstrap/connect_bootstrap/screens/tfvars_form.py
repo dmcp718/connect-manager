@@ -18,9 +18,11 @@ from connect_bootstrap import tfvars
 
 
 class TfvarsFormScreen(Screen):
+    # Plain "n" gets consumed by focused Inputs; use ctrl+j for advance
+    # so it works regardless of which field has focus.
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
-        Binding("n", "advance", "Next"),
+        Binding("ctrl+j", "advance", "Next"),
         Binding("ctrl+s", "save_now", "Save"),
     ]
 

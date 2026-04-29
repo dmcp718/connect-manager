@@ -21,10 +21,14 @@ from textual.widgets import Button, Footer, Header, Input, Label, Static
 
 
 class SecretsScreen(Screen):
+    # NOTE: bindings use ctrl-modifier keys because plain printable keys
+    # (g, n) get consumed by whichever Input has focus and never reach the
+    # screen — the operator wouldn't be able to advance from the secrets
+    # form once they'd clicked into any field.
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
-        Binding("n", "advance", "Next"),
-        Binding("g", "gen_jwt", "Generate JWT"),
+        Binding("ctrl+j", "advance", "Next"),
+        Binding("ctrl+g", "gen_jwt", "Generate JWT"),
     ]
 
     DEFAULT_CSS = """
@@ -45,6 +49,9 @@ class SecretsScreen(Screen):
         yield Header(show_clock=True)
         with Vertical(id="secrets-pane"):
             yield Static("[b]Step 5 / 8[/b] — Secrets Manager seeder", id="title")
+            yield Static(
+                "Click [b]Generate[/b] (or press [b]Ctrl+G[/b]) for a 32-byte JWT key."
+            )
 
             yield Label("JWT signing key (32+ random bytes, hex):")
             yield Input(password=True, id="jwt", placeholder="64 hex chars")
@@ -96,6 +103,19 @@ class SecretsScreen(Screen):
         ]
         if missing:
             status.update(f"[red]Missing:[/red] {', '.join(missing)}")
+            return
+
+        # JWT must be at least 32 bytes of entropy (64 hex chars). Anything
+        # shorter and Fernet (which derives its key from this value) becomes
+        # trivially brute-forceable.
+        if len(jwt) < 64 or not all(c in "0123456789abcdefABCDEF" for c in jwt):
+            status.update(
+                "[red]JWT must be 64+ hex characters (32+ bytes).[/red] "
+                "Click [b]Generate[/b] to make one."
+            )
+            return
+        if len(admin_password) < 8:
+            status.update("[red]Admin password must be at least 8 characters.[/red]")
             return
 
         from connect_bootstrap.aws_helper import boto3_client

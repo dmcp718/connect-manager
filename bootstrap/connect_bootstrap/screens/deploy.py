@@ -29,10 +29,11 @@ from connect_bootstrap.shell import run_stream
 
 
 class DeployScreen(Screen):
+    # Plain printable keys get consumed by the tag Input; use ctrl-modifiers.
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
-        Binding("n", "advance", "Next"),
-        Binding("d", "do_deploy", "Deploy"),
+        Binding("ctrl+j", "advance", "Next"),
+        Binding("ctrl+d", "do_deploy", "Deploy"),
     ]
 
     DEFAULT_CSS = """

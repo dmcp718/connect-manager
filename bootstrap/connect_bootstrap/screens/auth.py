@@ -28,10 +28,12 @@ from connect_bootstrap.shell import run_capture
 
 
 class AwsAuthScreen(Screen):
+    # Plain printable keys (n, v) get consumed by whichever Input has
+    # focus, so screen-level bindings never fire. Use ctrl-modifiers.
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
-        Binding("n", "advance", "Next"),
-        Binding("v", "verify_now", "Verify"),
+        Binding("ctrl+j", "advance", "Next"),
+        Binding("ctrl+v", "verify_now", "Verify"),
     ]
 
     DEFAULT_CSS = """
