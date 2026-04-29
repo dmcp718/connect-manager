@@ -205,10 +205,15 @@ def get_session_from_request(request: Request) -> UserSession:
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+async def login_page(
+    request: Request,
+    user=Depends(get_current_user_optional),
+):
     """Login page."""
-    # Check if already logged in
-    user = get_current_user_optional(request)
+    # If already logged in, bounce to the app. user is the resolved
+    # TokenData|None from FastAPI's dependency system — calling
+    # get_current_user_optional(request) directly returns a coroutine
+    # (truthy!) and creates an infinite /login → / → /login redirect.
     if user:
         from fastapi.responses import RedirectResponse
 
