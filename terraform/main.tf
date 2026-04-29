@@ -292,13 +292,15 @@ resource "aws_security_group_rule" "valkey_from_queue_metric" {
 module "rds" {
   source = "./modules/rds"
 
-  name               = var.env
-  subnet_ids         = module.vpc.private_subnet_ids
-  security_group_ids = [aws_security_group.rds.id]
-  instance_class     = var.rds_instance_class
-  multi_az           = var.rds_multi_az
-  kms_key_id         = module.secrets.kms_key_arn
-  tags               = local.tags
+  name                = var.env
+  subnet_ids          = module.vpc.private_subnet_ids
+  security_group_ids  = [aws_security_group.rds.id]
+  instance_class      = var.rds_instance_class
+  multi_az            = var.rds_multi_az
+  kms_key_id          = module.secrets.kms_key_arn
+  deletion_protection = var.rds_deletion_protection
+  skip_final_snapshot = var.rds_skip_final_snapshot
+  tags                = local.tags
 }
 
 module "elasticache" {

@@ -130,6 +130,18 @@ variable "rds_multi_az" {
   default     = false
 }
 
+variable "rds_deletion_protection" {
+  description = "RDS deletion protection. Default true (production-style). Smokes (one-shot deploys planning to terraform destroy) MUST set false in tfvars or destroy will fail."
+  type        = bool
+  default     = true
+}
+
+variable "rds_skip_final_snapshot" {
+  description = "Skip the RDS final snapshot on delete. Default false (keep snapshot, production-style). Smokes set true to avoid the artifact + the few minutes the snapshot takes."
+  type        = bool
+  default     = false
+}
+
 variable "elasticache_node_type" {
   description = "ElastiCache node type for the Valkey replication group."
   type        = string

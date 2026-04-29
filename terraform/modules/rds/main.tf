@@ -106,10 +106,10 @@ resource "aws_db_instance" "this" {
   backup_window           = "04:00-05:00"
   maintenance_window      = "Sun:05:00-Sun:06:00"
 
-  skip_final_snapshot       = false
+  skip_final_snapshot       = var.skip_final_snapshot
   final_snapshot_identifier = "connect-${var.name}-final-${formatdate("YYYYMMDDhhmmss", timestamp())}"
 
-  deletion_protection = true
+  deletion_protection = var.deletion_protection
 
   performance_insights_enabled          = true
   performance_insights_retention_period = 7

@@ -49,6 +49,18 @@ variable "engine_version" {
   default     = "16.13"
 }
 
+variable "deletion_protection" {
+  description = "Whether the RDS instance has deletion protection enabled. Default true for prod; smokes (awsk-3r4.5-style one-shot deploys) MUST set false in tfvars or terraform destroy will fail at the delete step. Operator can also disable on the live instance via `aws rds modify-db-instance --no-deletion-protection` and re-run destroy."
+  type        = bool
+  default     = true
+}
+
+variable "skip_final_snapshot" {
+  description = "Skip the final RDS snapshot on delete. Default false (production-style — keep the snapshot). Smokes set true to avoid the snapshot artifact + the few minutes it takes to create."
+  type        = bool
+  default     = false
+}
+
 variable "kms_key_id" {
   description = "KMS key ARN or ID for Secrets Manager encryption. Empty string uses the AWS-managed key (alias/aws/secretsmanager)."
   type        = string

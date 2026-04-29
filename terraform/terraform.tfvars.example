@@ -34,3 +34,9 @@ alarms_email = "alerts@example.com"
 # rds_instance_class    = "db.t4g.micro"
 # rds_multi_az          = false
 # elasticache_node_type = "cache.t4g.micro"
+#
+# Smoke flags — set both false for one-shot deploys that plan to
+# `terraform destroy`. Default true keeps the prod-safe behaviour
+# (deletion protection + final snapshot).
+# rds_deletion_protection = true
+# rds_skip_final_snapshot = false
