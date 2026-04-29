@@ -12,6 +12,24 @@ from textual.containers import Container
 from textual.widgets import Footer, Header, Static
 
 
+def _resolve_repo_root() -> Path:
+    """Find the repo root by walking up from cwd looking for terraform/main.tf.
+
+    The TUI is run from arbitrary cwds (project root, bootstrap/, etc.). The
+    previous default of Path.cwd() picked up bootstrap/ and tried to write
+    bootstrap/terraform/terraform.tfvars. Walk upward looking for the real
+    terraform/ dir; fall back to the package's source-tree parent for
+    editable installs; final fallback is cwd so the error is at least visible.
+    """
+    for candidate in (Path.cwd(), *Path.cwd().parents):
+        if (candidate / "terraform" / "main.tf").is_file():
+            return candidate
+    pkg_root = Path(__file__).resolve().parents[2]
+    if (pkg_root / "terraform" / "main.tf").is_file():
+        return pkg_root
+    return Path.cwd()
+
+
 @dataclass
 class WizardState:
     """State that flows between screens.
@@ -21,7 +39,7 @@ class WizardState:
     """
 
     # Resolved at startup
-    repo_root: Path = field(default_factory=lambda: Path.cwd())
+    repo_root: Path = field(default_factory=_resolve_repo_root)
     terraform_dir: Optional[Path] = None
 
     # From auth screen
