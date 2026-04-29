@@ -119,6 +119,16 @@ class AwsAuthScreen(Screen):
             env.setdefault(
                 "AWS_SECRET_ACCESS_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", "test")
             )
+            # Propagate to the python process env too — boto3 clients in the
+            # later screens (secrets, cluster, deploy, status) inherit os.environ
+            # and would otherwise hit real AWS instead of ministack.
+            os.environ["AWS_ENDPOINT_URL"] = env["AWS_ENDPOINT_URL"]
+            os.environ["AWS_ACCESS_KEY_ID"] = env["AWS_ACCESS_KEY_ID"]
+            os.environ["AWS_SECRET_ACCESS_KEY"] = env["AWS_SECRET_ACCESS_KEY"]
+        # Always sync region into os.environ so later boto3 clients agree
+        # with the value the operator just verified.
+        os.environ["AWS_REGION"] = region
+        os.environ["AWS_DEFAULT_REGION"] = region
 
         status.update("Running [b]aws sts get-caller-identity[/b] …")
         rc, out, err = await run_capture(

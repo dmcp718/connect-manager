@@ -205,12 +205,13 @@ def patch_externals(monkeypatch: pytest.MonkeyPatch) -> None:
     its source module is enough.
     """
     from connect_bootstrap import aws_helper
-    from connect_bootstrap.screens import apply, auth, deps
+    from connect_bootstrap.screens import apply, auth, deploy, deps
 
     monkeypatch.setattr(deps, "run_capture", fake_run_capture)
     monkeypatch.setattr(auth, "run_capture", fake_run_capture)
     monkeypatch.setattr(apply, "run_capture", fake_run_capture)
     monkeypatch.setattr(apply, "run_stream", fake_run_stream)
+    monkeypatch.setattr(deploy, "run_stream", fake_run_stream)
     monkeypatch.setattr(aws_helper, "boto3_client", fake_boto3_client)
 
     # DepsCheckScreen probes via shutil.which to decide if a binary is
@@ -251,4 +252,10 @@ def repo_root(tmp_path: Path) -> Path:
         'alarms_email    = "alerts@example.com"\n'
         'vpc_cidr        = "10.20.0.0/16"\n'
     )
+    # DeployScreen pre-flights for scripts/deploy.sh — provide a dummy so
+    # the existence check passes (run_stream is patched at module scope).
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "deploy.sh").write_text("#!/usr/bin/env bash\necho ok\n")
+    (scripts / "deploy.sh").chmod(0o755)
     return tmp_path

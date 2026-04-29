@@ -1,19 +1,31 @@
-"""Step 7: CONNECT install (ECS service deploy + ALB target health smoke probe).
+"""Step 7: CONNECT install — delegates to scripts/deploy.sh.
 
-Runs the same ecs:UpdateService / wait services-stable flow that the
-GitHub Actions workflow uses, then polls the web target group until at
-least one target is healthy.
+The Path B deploy script (scripts/deploy.sh) was smoke-validated end-to-end
+against real AWS in awsk-3r4.5: ECR login, multi-arch build + push,
+register migrate task def + run-task, wait for clean exit, then register
+new web/worker task defs and update-service. Reimplementing that here
+would diverge — the TUI live-streams the script's output instead.
+
+Pre-conditions (enforced by the screen):
+  - terraform apply has populated cluster_name + web/worker service names
+    on WizardState.
+  - docker is on $PATH (deps screen warns if missing, but it's optional
+    there because local dev doesn't need it).
 """
 
 from __future__ import annotations
 
-import asyncio
+import os
+import shutil
+from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, ProgressBar, RichLog, Static
+from textual.widgets import Button, Footer, Header, Input, Label, RichLog, Static
+
+from connect_bootstrap.shell import run_stream
 
 
 class DeployScreen(Screen):
@@ -32,24 +44,59 @@ class DeployScreen(Screen):
         height: 100%;
         padding: 1 2;
     }
+    Horizontal#tag-row {
+        height: auto;
+    }
+    Input {
+        width: 1fr;
+    }
     RichLog {
         height: 1fr;
         border: round $accent;
     }
+    Horizontal#buttons {
+        height: auto;
+    }
     """
+
+    DEPLOY_SCRIPT_RELATIVE = "scripts/deploy.sh"
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Vertical(id="deploy-pane"):
             yield Static(
-                "[b]Step 7 / 8[/b] — Service deploy + ALB target health", id="title"
+                "[b]Step 7 / 8[/b] — Build images, run migrate, deploy services",
+                id="title",
             )
+            yield Static(
+                "Runs scripts/deploy.sh: ECR login → buildx multi-arch → push → "
+                "migrate task → update-service → wait services-stable.",
+            )
+            with Horizontal(id="tag-row"):
+                yield Label("Image tag (blank = git short SHA):")
+                yield Input(placeholder="e.g. v0.1.0", id="tag")
             yield RichLog(id="log", highlight=True, markup=True)
-            yield ProgressBar(id="progress", total=100, show_eta=False)
-            with Horizontal():
+            yield Static("", id="status")
+            with Horizontal(id="buttons"):
                 yield Button("Deploy", id="deploy", variant="primary")
                 yield Button("Next →", id="next", disabled=True)
         yield Footer()
+
+    def _script_path(self) -> Path:
+        return self.app.state.repo_root / self.DEPLOY_SCRIPT_RELATIVE
+
+    def _preflight(self) -> str | None:
+        """Return a human-readable error if the screen can't run, else None."""
+        s = self.app.state
+        if not s.cluster_name:
+            return "cluster_name missing — re-run terraform apply"
+        if not s.web_service_name or not s.worker_service_name:
+            return "web/worker service names missing — re-run terraform apply"
+        if not self._script_path().is_file():
+            return f"deploy script not found at {self._script_path()}"
+        if shutil.which("docker") is None:
+            return "docker is not on $PATH — install docker (and buildx) and retry"
+        return None
 
     def action_do_deploy(self) -> None:
         self.run_worker(self._deploy(), exclusive=True)
@@ -65,107 +112,59 @@ class DeployScreen(Screen):
             self._advance()
 
     async def _deploy(self) -> None:
-        from connect_bootstrap.aws_helper import boto3_client
-
         log: RichLog = self.query_one(RichLog)
-        progress: ProgressBar = self.query_one(ProgressBar)
-        progress.update(progress=0)
+        status = self.query_one("#status", Static)
 
-        cluster = self.app.state.cluster_name
-        web = self.app.state.web_service_name
-        worker = self.app.state.worker_service_name
-        region = self.app.state.aws_region
-        if not (cluster and web and worker):
-            log.write(
-                "[red]missing cluster/service names from state — re-run terraform apply[/red]"
-            )
+        err = self._preflight()
+        if err:
+            status.update(f"[red]{err}[/red]")
             return
 
-        ecs = boto3_client("ecs", region_name=region)
-        elbv2 = boto3_client("elbv2", region_name=region)
+        s = self.app.state
+        env = {
+            **os.environ,
+            "AWS_REGION": s.aws_region,
+            "AWS_DEFAULT_REGION": s.aws_region,
+            "CLUSTER_NAME": s.cluster_name or f"connect-{s.env}",
+            "WEB_SERVICE": s.web_service_name or f"connect-{s.env}-web",
+            "WORKER_SERVICE": s.worker_service_name or f"connect-{s.env}-worker",
+            "MIGRATE_TASK_DEF_FAMILY": s.migrate_task_definition_family
+            or f"connect-{s.env}-migrate",
+            "WEB_TASK_DEF_FAMILY": f"connect-{s.env}-web",
+            "WORKER_TASK_DEF_FAMILY": f"connect-{s.env}-worker",
+        }
 
-        log.write(f"[b]→ update-service[/b] {web} (force-new-deployment)")
-        try:
-            ecs.update_service(cluster=cluster, service=web, forceNewDeployment=True)
-        except Exception as e:
-            log.write(f"[red]update_service failed:[/red] {e}")
-            return
-        progress.update(progress=20)
+        argv: list[str] = ["bash", str(self._script_path())]
+        tag = self.query_one("#tag", Input).value.strip()
+        if tag:
+            argv.append(tag)
 
-        log.write(f"[b]→ update-service[/b] {worker} (force-new-deployment)")
-        try:
-            ecs.update_service(cluster=cluster, service=worker, forceNewDeployment=True)
-        except Exception as e:
-            log.write(f"[red]update_service failed:[/red] {e}")
-            return
-        progress.update(progress=40)
+        log.clear()
+        log.write(f"[b]$ {' '.join(argv)}[/b]")
+        status.update("running deploy.sh — this typically takes 8–15 min")
 
-        log.write("[b]→ waiting for services-stable[/b] (timeout 15 min)")
-        # boto3 waiter is sync; run in a thread so the UI keeps responding.
-        try:
-            await asyncio.to_thread(
-                self._wait_services_stable, ecs, cluster, [web, worker]
-            )
-        except Exception as e:
-            log.write(f"[red]wait services-stable failed:[/red] {e}")
-            return
-        progress.update(progress=80)
-        log.write("[green]services stable[/green]")
+        rc = -1
+        async for label, line in run_stream(
+            argv,
+            cwd=str(self.app.state.repo_root),
+            env=env,
+        ):
+            if label == "exit":
+                rc = int(line)
+                break
+            log.write(("[red]" + line + "[/red]") if label == "stderr" else line)
 
-        log.write("[b]→ probing ALB target health[/b]")
-        target_groups = await asyncio.to_thread(
-            self._target_groups_for_service, elbv2, ecs, cluster, web
-        )
-        healthy = await asyncio.to_thread(
-            self._wait_for_healthy_targets, elbv2, target_groups, deadline_s=120
-        )
-        progress.update(progress=100)
-        if healthy:
+        if rc == 0:
             self.app.state.deploy_succeeded = True
-            log.write(
-                f"[green]✓ at least one target healthy[/green]  →  https://{self.app.state.domain}/health"
+            domain = self.app.state.domain or "<domain>"
+            status.update(
+                f"[green]✓ deploy complete[/green] — try [link]https://{domain}/health[/link]"
             )
             self.query_one("#next", Button).disabled = False
         else:
-            log.write("[red]no healthy targets within 2 min — investigate[/red]")
-
-    @staticmethod
-    def _wait_services_stable(ecs, cluster: str, services: list[str]) -> None:
-        waiter = ecs.get_waiter("services_stable")
-        waiter.wait(
-            cluster=cluster,
-            services=services,
-            WaiterConfig={"Delay": 15, "MaxAttempts": 60},  # 15 min
-        )
-
-    @staticmethod
-    def _target_groups_for_service(elbv2, ecs, cluster: str, service: str) -> list[str]:
-        resp = ecs.describe_services(cluster=cluster, services=[service])
-        svcs = resp.get("services", [])
-        if not svcs:
-            return []
-        lbs = svcs[0].get("loadBalancers", [])
-        return [lb["targetGroupArn"] for lb in lbs if "targetGroupArn" in lb]
-
-    @staticmethod
-    def _wait_for_healthy_targets(
-        elbv2, tg_arns: list[str], deadline_s: int = 120
-    ) -> bool:
-        import time
-
-        deadline = time.monotonic() + deadline_s
-        while time.monotonic() < deadline:
-            for tg_arn in tg_arns:
-                resp = elbv2.describe_target_health(TargetGroupArn=tg_arn)
-                healthy = [
-                    t
-                    for t in resp.get("TargetHealthDescriptions", [])
-                    if t.get("TargetHealth", {}).get("State") == "healthy"
-                ]
-                if healthy:
-                    return True
-            time.sleep(5)
-        return False
+            status.update(
+                f"[red]deploy.sh exited {rc}[/red] — fix the underlying issue and retry"
+            )
 
     def _advance(self) -> None:
         from connect_bootstrap.screens.status import StatusScreen
