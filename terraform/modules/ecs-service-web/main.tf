@@ -64,9 +64,14 @@ resource "aws_ecs_task_definition" "web" {
       ]
 
       healthCheck = {
-        # TCP-only check (the API itself is HTTP but a TCP connect is the
-        # cheapest signal that the sidecar is up and listening).
-        command     = ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/${var.lucidlink_api_port} && echo > /dev/null"]
+        # The lucidlink-api image is a Nest.js app on Node.js; bash isn't
+        # guaranteed in the image so /dev/tcp/... redirections won't work.
+        # Use node (always present) to GET the root and pass on any HTTP
+        # response under 500.
+        command = [
+          "CMD-SHELL",
+          "node -e \"require('http').get('http://127.0.0.1:${var.lucidlink_api_port}/', r => process.exit(r.statusCode<500?0:1)).on('error', () => process.exit(1))\"",
+        ]
         interval    = 15
         timeout     = 5
         retries     = 3
@@ -102,7 +107,11 @@ resource "aws_ecs_task_definition" "web" {
       dependsOn = [
         {
           containerName = "lucidlink-api"
-          condition     = "HEALTHY"
+          # START rather than HEALTHY: web does its own retries when calling
+          # the sidecar. Waiting for HEALTHY adds 30s+ of startup latency
+          # without preventing the few transient failures during the
+          # sidecar's own warm-up.
+          condition = "START"
         }
       ]
 

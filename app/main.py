@@ -131,13 +131,18 @@ async def _enrich_queues_for_template(
 
 async def _startup() -> None:
     auth_service.ensure_jwt_secret_valid()
-    auth_service.ensure_admin_exists()
     # Wire ActivityLogger fire-and-forget DB persistence before any route
     # (including the login endpoint) gets a chance to call ActivityLogger.log.
     from services.activity_logger import configure_persistence
     from services.database import get_sessionmaker
 
-    configure_persistence(get_sessionmaker())
+    sm = get_sessionmaker()
+    configure_persistence(sm)
+    # Bootstrap the admin user (no-op when one already exists). Needs a
+    # session — done after configure_persistence so any activity log
+    # emitted during bootstrap also lands in Postgres.
+    async with sm() as session:
+        await auth_service.ensure_admin_exists(session)
     await job_queue.start()
     # Background sampler for connect_arq_queue_depth + connect_db_pool_in_use.
     try:

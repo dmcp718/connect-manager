@@ -32,13 +32,30 @@ _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 def _build_ssl_arg() -> ssl.SSLContext | bool:
     """Return the asyncpg ssl= connect arg.
 
-    asyncpg does not honour sslmode= URL parameters; the ssl= keyword arg is
-    the supported path.  When DATABASE_URL_DISABLE_SSL=1 we pass False (no
-    TLS).  Otherwise we build a default-strict SSLContext (sslmode=require
-    equivalent).
+    asyncpg does not honour sslmode= URL parameters; the ssl= keyword arg
+    is the supported path.
+
+    Three modes, controlled by env:
+    - DATABASE_URL_DISABLE_SSL=1: return False (no TLS at all). For
+      ministack / local-dev only — RDS rejects this since the parameter
+      group sets rds.force_ssl=1.
+    - DATABASE_URL_INSECURE_SSL=1: return an SSLContext with hostname
+      verification + cert validation disabled. TLS is still negotiated
+      (so rds.force_ssl is satisfied) but we skip the X.509 chain. Used
+      when the AWS RDS CA bundle isn't shipped in the image and the
+      network path is private (VPC-internal). This is the smoke /
+      dev-account default.
+    - default: strict SSLContext using the system CA store (sslmode=require
+      semantics). Production with the RDS CA bundle baked into the image
+      should use this.
     """
     if os.environ.get("DATABASE_URL_DISABLE_SSL") == "1":
         return False
+    if os.environ.get("DATABASE_URL_INSECURE_SSL") == "1":
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
     ctx = ssl.create_default_context()
     return ctx
 

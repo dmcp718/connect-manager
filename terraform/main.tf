@@ -53,20 +53,31 @@ locals {
   worker_image = "${module.ecr.repository_uris["connect-worker"]}:${var.worker_image_tag}"
 
   # Plain (non-secret) env vars shared by web + worker + migrate.
+  # DATABASE_URL_INSECURE_SSL=1 keeps TLS-in-transit (RDS parameter group
+  # has rds.force_ssl=1) but skips X.509 chain validation, since the AWS
+  # RDS CA bundle isn't baked into the image. The network path is private
+  # (VPC-internal), so this is acceptable for this stack. Set to 0 (or
+  # remove) once the RDS CA is shipped via Dockerfile.
   app_env_vars = merge(
     {
-      ENV        = var.env
-      AWS_REGION = var.aws_region
-      LOG_LEVEL  = var.log_level
+      ENV                       = var.env
+      AWS_REGION                = var.aws_region
+      LOG_LEVEL                 = var.log_level
+      DATABASE_URL_INSECURE_SSL = "1"
     },
     var.app_env_vars,
   )
 
-  # Secret env vars: env-var name → Secrets Manager valueFrom.
+  # Secret env vars: env-var name -> Secrets Manager valueFrom.
+  # Format: <secret-arn>:<json-key>:<version-stage>:<version-id>. All three
+  # trailing segments must be present even when empty; trimming any pair
+  # makes ECS reject the ARN with "unexpected ARN format with parameters".
+  # The bootstrap TUI seeds /connect/<env>/jwt as {"value":"<hex>"}, so we
+  # extract the `value` key.
   app_secret_env_vars = {
     DATABASE_URL   = "${module.rds.master_secret_arn}:url::"
     VALKEY_URL     = "${module.elasticache.auth_secret_arn}:url::"
-    JWT_SECRET_KEY = "${module.secrets.secret_arns["jwt"]}::"
+    JWT_SECRET_KEY = "${module.secrets.secret_arns["jwt"]}:value::"
   }
 
   # All secret ARNs the Task Execution Role is allowed to read.
