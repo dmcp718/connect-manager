@@ -1018,11 +1018,16 @@ async def browse_datastore(
     prefix: str = "",
     page: int = 1,
     page_size: int = 50,
+    session: AsyncSession = Depends(get_db),
 ):
     """Browse S3 for a specific DataStore."""
     from math import ceil
 
     state = get_session_from_request(request)
+    # UserSession is process-local; on a fresh task or after a restart the
+    # in-memory caches are empty until hydrated from Postgres.
+    parsed_uid = _parse_uid(getattr(request.state, "user_id", None))
+    await state.hydrate(session, parsed_uid)
     cred = state.get_datastore_by_id(datastore_id)
     if not cred:
         return templates.TemplateResponse(
@@ -1113,9 +1118,12 @@ async def import_file(
     request: Request,
     key: str = Form(...),
     datastore_id: str = Form(...),
+    session: AsyncSession = Depends(get_db),
 ):
     """Import a single file from S3 to LucidLink."""
     state = get_session_from_request(request)
+    parsed_uid = _parse_uid(getattr(request.state, "user_id", None))
+    await state.hydrate(session, parsed_uid)
     state.log(f"Importing: {key}")
     state.progress = 0.1
 
@@ -1175,9 +1183,12 @@ async def import_folder(
     request: Request,
     prefix: str = Form(""),
     datastore_id: str = Form(...),
+    session: AsyncSession = Depends(get_db),
 ):
     """Add a folder import job to the queue."""
     state = get_session_from_request(request)
+    parsed_uid = _parse_uid(getattr(request.state, "user_id", None))
+    await state.hydrate(session, parsed_uid)
     # Get DataStore credentials
     cred = state.get_datastore_by_id(datastore_id)
     if not cred:
