@@ -49,10 +49,10 @@ class TfvarsFormScreen(Screen):
         ("route53_zone_id", "route53_zone_id", "", True, "Z0123456789ABCDEFGHIJ"),
         (
             "github_repo",
-            "github_repo",
-            "dmcp718/connect-manager",
+            "github_repo (Path A only — blank = skip GitHub Actions OIDC)",
+            "",
             False,
-            "owner/repo (empty disables OIDC)",
+            "owner/repo or leave empty",
         ),
         ("alarms_email", "alarms_email", "", False, "alerts@example.com"),
         ("vpc_cidr", "vpc_cidr", "10.20.0.0/16", False, "10.20.0.0/16"),
