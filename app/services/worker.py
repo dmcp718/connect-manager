@@ -85,15 +85,24 @@ async def import_job(ctx: dict[str, Any], job_id: int) -> dict[str, Any]:
 
     ll_client: Optional[LucidLinkClient] = None
     try:
-        if user_id:
-            token = secrets.get_user_token(user_id)
-        else:
-            token = secrets.get_lucidlink_token()
-        if not token:
-            raise ValueError("No API token available - please reconnect in web UI")
-
         parsed_uid = uuid.UUID(user_id) if user_id else None
         async with sm() as session:
+            # Token is Fernet-encrypted in user_settings under 'll_token_enc'.
+            # Falls back to the legacy services.secrets path for tokens
+            # saved before v0.1.5.
+            token: Optional[str] = None
+            if parsed_uid is not None:
+                token = await state_helpers.load_ll_token(session, parsed_uid)
+            if not token:
+                token = (
+                    secrets.get_user_token(user_id)
+                    if user_id
+                    else secrets.get_lucidlink_token()
+                )
+            if not token:
+                raise ValueError(
+                    "No API token available - please reconnect in web UI"
+                )
             ds_cred = await state_helpers.get_datastore_credentials(
                 session, job["datastore_id"], parsed_uid
             )

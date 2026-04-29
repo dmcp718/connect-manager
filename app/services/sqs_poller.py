@@ -278,11 +278,19 @@ async def process_s3_event(
             await session.commit()
         return
 
-    token = (
-        secrets.get_user_token(str(user_id))
-        if user_id
-        else secrets.get_lucidlink_token()
-    )
+    # Token is Fernet-encrypted in user_settings under 'll_token_enc' since
+    # v0.1.5. Fall back to the legacy services.secrets path for tokens
+    # saved before that.
+    token: Optional[str] = None
+    if user_id:
+        async with sm() as session:
+            token = await state_helpers.load_ll_token(session, user_id)
+    if not token:
+        token = (
+            secrets.get_user_token(str(user_id))
+            if user_id
+            else secrets.get_lucidlink_token()
+        )
     if not token:
         async with sm() as session:
             await SqsEventRepository(session).update_status(
