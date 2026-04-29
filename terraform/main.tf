@@ -64,6 +64,14 @@ locals {
       AWS_REGION                = var.aws_region
       LOG_LEVEL                 = var.log_level
       DATABASE_URL_INSECURE_SSL = "1"
+      # Triggers app/services/secrets.py container_mode → Fernet-encrypted
+      # file at $DATA_DIR/secrets.enc. Without it the module imports the
+      # `keyring` package and tries to use the OS keychain, which doesn't
+      # exist in a Fargate container — every "Load filespaces" / per-user
+      # token write 500s with NoKeyringError. Per-task-instance state
+      # (NOT multi-replica safe); follow-up: move per-user tokens to
+      # Postgres-Fernet alongside the datastore creds.
+      DATA_DIR = "/tmp/connect-secrets"
     },
     var.app_env_vars,
   )
