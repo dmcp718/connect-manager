@@ -52,6 +52,7 @@ class StatusScreen(Screen):
         with Vertical(id="status-pane"):
             yield Static("[b]Step 8 / 8[/b] — Status dashboard", id="title")
             yield Static("App URL: [link]https://{}[/link]", id="url")
+            yield Static("App version: —", id="version-line")
             yield Static("[b]ECS services[/b]")
             yield DataTable(id="services-tbl")
             yield Static("[b]ALB targets[/b]")
@@ -127,11 +128,42 @@ class StatusScreen(Screen):
             asyncio.to_thread(self._refresh_services, ecs, cluster, [web, worker]),
             asyncio.to_thread(self._refresh_alb, ecs, elbv2, cluster, web),
             asyncio.to_thread(self._refresh_alarms, cw),
+            self._refresh_version(),
         )
 
         self.query_one("#last-updated", Static).update(
             f"updated {datetime.now(timezone.utc).strftime('%H:%M:%SZ')}"
         )
+
+    async def _refresh_version(self) -> None:
+        """Probe https://<domain>/health and surface the running version."""
+        import httpx
+
+        widget = self.query_one("#version-line", Static)
+        domain = self.app.state.domain
+        if not domain:
+            widget.update("App version: [yellow]— (no domain set)[/yellow]")
+            return
+        url = f"https://{domain}/health"
+        try:
+            async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+                resp = await client.get(url)
+        except (httpx.HTTPError, OSError) as e:
+            widget.update(f"App version: [red]unreachable[/red] ({type(e).__name__})")
+            return
+        if resp.status_code != 200:
+            widget.update(f"App version: [red]/health returned {resp.status_code}[/red]")
+            return
+        try:
+            body = resp.json()
+        except ValueError:
+            widget.update("App version: [yellow]/health not JSON[/yellow]")
+            return
+        version = body.get("version")
+        if not version:
+            widget.update("App version: [yellow]/health has no 'version' field[/yellow]")
+            return
+        widget.update(f"App version: [b]{version}[/b]")
 
     def _refresh_services(self, ecs, cluster: str, services: list[str]) -> None:
         tbl = self.query_one("#services-tbl", DataTable)
