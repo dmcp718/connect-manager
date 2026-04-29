@@ -143,6 +143,10 @@ async def _startup() -> None:
     # emitted during bootstrap also lands in Postgres.
     async with sm() as session:
         await auth_service.ensure_admin_exists(session)
+    # JobQueue needs the sessionmaker before any add/get/cancel call —
+    # without this every /api/jobs request 500s with
+    # "JobQueue.set_sessionmaker() must be called before get_jobs()".
+    job_queue.set_sessionmaker(sm)
     await job_queue.start()
     # Background sampler for connect_arq_queue_depth + connect_db_pool_in_use.
     try:
