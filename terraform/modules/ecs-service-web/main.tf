@@ -63,20 +63,16 @@ resource "aws_ecs_task_definition" "web" {
         }
       ]
 
-      healthCheck = {
-        # The lucidlink-api image is a Nest.js app on Node.js; bash isn't
-        # guaranteed in the image so /dev/tcp/... redirections won't work.
-        # Use node (always present) to GET the root and pass on any HTTP
-        # response under 500.
-        command = [
-          "CMD-SHELL",
-          "node -e \"require('http').get('http://127.0.0.1:${var.lucidlink_api_port}/', r => process.exit(r.statusCode<500?0:1)).on('error', () => process.exit(1))\"",
-        ]
-        interval    = 15
-        timeout     = 5
-        retries     = 3
-        startPeriod = 30
-      }
+      # No container-level healthcheck on the lucidlink-api sidecar.
+      # The ALB target group already health-checks /health on the web
+      # container, which proxies any lucidlink-api work — if the sidecar
+      # is broken, web responds 5xx, ALB marks the target unhealthy, and
+      # ECS replaces the task. Adding a sidecar-side probe duplicates that
+      # safety net and is fragile because the upstream lucidlink-api image
+      # is published as :latest (no pinned tag), so its toolchain
+      # (bash/node/curl/wget) can't be assumed stable across releases.
+      # An April 28 smoke worked with a Node-based probe; April 29 the
+      # same probe killed the deploy because the upstream image moved.
 
       logConfiguration = {
         logDriver = "awslogs"

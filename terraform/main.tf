@@ -78,6 +78,12 @@ locals {
     DATABASE_URL   = "${module.rds.master_secret_arn}:url::"
     VALKEY_URL     = "${module.elasticache.auth_secret_arn}:url::"
     JWT_SECRET_KEY = "${module.secrets.secret_arns["jwt"]}:value::"
+    # Bootstrap admin user — seeded by TUI Step 5 / operator into the
+    # /connect/<env>/admin secret as {"email": "...", "password": "..."}.
+    # Without this wiring, ensure_admin_exists() falls back to the
+    # admin@localhost / admin defaults baked into app/services/auth.py.
+    ADMIN_EMAIL    = "${module.secrets.secret_arns["admin"]}:email::"
+    ADMIN_PASSWORD = "${module.secrets.secret_arns["admin"]}:password::"
   }
 
   # All secret ARNs the Task Execution Role is allowed to read.

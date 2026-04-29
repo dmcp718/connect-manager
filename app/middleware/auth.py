@@ -8,6 +8,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, JSONResponse
 
 from services import auth
+from services.database import get_sessionmaker
 
 
 # Routes that don't require authentication
@@ -45,8 +46,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not token:
             return self._unauthorized_response(request)
 
-        # Verify token
-        payload = auth.decode_token(token)
+        # Verify token. decode_token() is async and needs a DB session
+        # (it checks UserSession revocation via UserSessionRepository).
+        async with get_sessionmaker()() as session:
+            payload = await auth.decode_token(session, token)
         if not payload:
             return self._unauthorized_response(request)
 
