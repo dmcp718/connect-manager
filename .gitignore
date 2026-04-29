@@ -57,3 +57,6 @@ flask_icon.png
 # Beads / Dolt files (added by bd init)
 .dolt/
 .beads-credential-key
+
+# Claude Code agent worktrees
+.claire/
