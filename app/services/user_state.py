@@ -24,6 +24,8 @@ from services.s3_service import S3Service
 from services.state import (
     get_user_setting,
     list_all_datastore_credentials,
+    load_ll_token,
+    save_ll_token,
     set_user_setting,
 )
 
@@ -102,6 +104,17 @@ class UserSession:
         saved_api_host = await get_user_setting(session, user_uuid, "api_host")
         if saved_api_host:
             self.api_host = saved_api_host
+
+        # LucidLink API token: Fernet-encrypted in user_settings under
+        # 'll_token_enc'. Loaded here so a fresh task / restart restores
+        # the token instead of forcing the user to re-paste it. Falls back
+        # to whatever load_from_db() set from the legacy secrets file
+        # (kept for one release for in-flight tokens that were saved before
+        # this migration; can be dropped after).
+        if user_uuid is not None and not self.token:
+            saved_token = await load_ll_token(session, user_uuid)
+            if saved_token:
+                self.token = saved_token
 
         rows = await list_all_datastore_credentials(session, user_id=user_uuid)
         for row in rows:
@@ -188,6 +201,20 @@ class UserSession:
         if not self.api_host or user_uuid is None:
             return
         await set_user_setting(session, user_uuid, "api_host", self.api_host)
+
+    async def save_token(
+        self, session: AsyncSession, user_uuid: Optional[uuid.UUID]
+    ) -> None:
+        """Persist the LucidLink token Fernet-encrypted in user_settings.
+
+        Replaces the sync services.secrets.set_user_token write path —
+        that wrote to a per-task Fernet file which is lost on task
+        restart and not visible to other replicas, so the token
+        appeared to "not save" between requests.
+        """
+        if not self.token or user_uuid is None:
+            return
+        await save_ll_token(session, user_uuid, self.token)
 
     def log(self, message: str) -> None:
         """Add a timestamped log message."""

@@ -327,9 +327,12 @@ async def load_filespaces(
     state.filespaces = {fs.get("name"): fs.get("id") for fs in result}
     state.token = token
     state.api_host = effective_host
-    state.save_connection(save_secrets=True)  # token via services.secrets (sync)
     user_id_str_for_save = getattr(request.state, "user_id", None)
-    await state.save_api_host(session, _parse_uid(user_id_str_for_save))
+    parsed_uid_for_save = _parse_uid(user_id_str_for_save)
+    # Persist the token Fernet-encrypted in Postgres (multi-replica safe,
+    # survives task restart) instead of the legacy per-task Fernet file.
+    await state.save_token(session, parsed_uid_for_save)
+    await state.save_api_host(session, parsed_uid_for_save)
     await session.commit()
     state.log(f"Loaded {len(result)} filespaces")
 
@@ -475,7 +478,8 @@ async def connect(
         if existing_creds:
             # Already have credentials - go directly to browser
             state.selected_datastore = datastore
-            state.save_connection(save_secrets=True)
+            await state.save_token(session, _parse_uid(user_id))
+            await session.commit()
             state.log(f"Connected to DataStore: {datastore}")
 
             return templates.TemplateResponse(

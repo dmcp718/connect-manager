@@ -52,6 +52,36 @@ def _decrypt_secret(ciphertext: bytes) -> str:
     return fernet.decrypt(ciphertext).decode()
 
 
+async def save_ll_token(
+    session: AsyncSession, user_id: uuid.UUID, token: str
+) -> None:
+    """Persist the user's LucidLink token Fernet-encrypted in user_settings.
+
+    Replaces the legacy services.secrets.set_user_token path which wrote
+    to a per-task-instance Fernet file at $DATA_DIR/secrets.enc — that
+    path was lost on task restart and not multi-replica safe, so users
+    saw their token disappear after every web container churn. This
+    keeps the same encryption-at-rest contract (Fernet derived from
+    JWT_SECRET_KEY via secrets._get_fernet()) but in Postgres.
+    """
+    if not token:
+        return
+    repo = UserSettingsRepository(session)
+    ciphertext = _encrypt_secret(token).decode("ascii")  # fernet output is URL-safe b64
+    await repo.upsert(user_id, "ll_token_enc", ciphertext)
+
+
+async def load_ll_token(
+    session: AsyncSession, user_id: uuid.UUID
+) -> Optional[str]:
+    """Return the user's plaintext LucidLink token from user_settings, or None."""
+    repo = UserSettingsRepository(session)
+    ciphertext = await repo.get(user_id, "ll_token_enc")
+    if not ciphertext:
+        return None
+    return _decrypt_secret(ciphertext.encode("ascii"))
+
+
 async def save_datastore_credentials(
     session: AsyncSession,
     datastore_id: str,
