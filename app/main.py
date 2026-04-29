@@ -165,9 +165,12 @@ async def lifespan(app: FastAPI):
         yield
 
 
+from version import __version__ as app_version  # noqa: E402
+
 app = FastAPI(
     title="LucidLink Labs | LucidLink Connect Manager",
     description="S3 to LucidLink Integrator - Multi-user",
+    version=app_version,
     lifespan=lifespan,
 )
 

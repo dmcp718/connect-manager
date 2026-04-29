@@ -93,7 +93,9 @@ db_pool_in_use = prometheus_client.Gauge(
 
 @router.get("/health")
 async def liveness() -> dict[str, str]:
-    return {"status": "ok"}
+    from version import __version__ as app_version
+
+    return {"status": "ok", "version": app_version}
 
 
 @router.get("/ready")

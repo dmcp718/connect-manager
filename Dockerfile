@@ -64,6 +64,7 @@ COPY --from=deps /app/.venv /app/.venv
 # /migrations so the migrate task can run `alembic -c /migrations/alembic.ini
 # upgrade head` regardless of working directory.
 COPY app/ /app/
+COPY VERSION /app/VERSION
 COPY alembic.ini /migrations/alembic.ini
 COPY alembic/ /migrations/alembic/
 
